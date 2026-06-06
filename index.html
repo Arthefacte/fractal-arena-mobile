@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Fractal Arena</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="mobile.css" />
+  <style>
+    :root { --filigrane: url('assets/BACKGROUND.png'); }
+    @keyframes obFloat { 0%,100% { transform: translateY(-6px); } 50% { transform: translateY(6px); } }
+    @keyframes obPulse {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 14px rgba(247,147,26,0.35)) drop-shadow(0 0 22px rgba(0,240,255,0.18)); }
+      50% { transform: scale(1.06); filter: drop-shadow(0 0 28px rgba(247,147,26,0.6)) drop-shadow(0 0 44px rgba(0,240,255,0.4)); }
+    }
+    @keyframes obHalo { 0%,100% { transform: scale(0.92); } 50% { transform: scale(1.06); } }
+    @keyframes obSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #05070f; z-index: 999; }
+    #boot .b { font-family: 'JetBrains Mono', monospace; color: #00F0FF; letter-spacing: 4px; font-size: 13px; animation: bootPulse 1.1s ease-in-out infinite; }
+    @keyframes bootPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <template id="__bundler_thumbnail">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100" height="100" fill="#05070f"/>
+      <polygon points="50,18 78,34 78,66 50,82 22,66 22,34" fill="none" stroke="#F7931A" stroke-width="3"/>
+      <polygon points="50,30 66,39 66,61 50,70 34,61 34,39" fill="none" stroke="#00F0FF" stroke-width="2"/>
+      <text x="50" y="57" font-family="monospace" font-size="20" font-weight="700" fill="#EAF1FF" text-anchor="middle">FA</text>
+    </svg>
+  </template>
+  <div id="boot"><div class="b">FRACTAL ARENA · BOOTING</div></div>
+
+  <script src="./vendor/react.production.min.js"></script>
+  <script src="./vendor/react-dom.production.min.js"></script>
+  <script src="./vendor/babel.min.js"></script>
+
+  <!-- plain JS data/logic -->
+  <script src="data.js"></script>
+  <script src="i18n.js"></script>
+  <script src="engine.js"></script>
+
+  <!-- React (Babel) — order matters: components → screens → app -->
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="arena.jsx"></script>
+  <script type="text/babel" src="screens.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+
+  <script>
+    // hide boot splash once React has mounted
+    (function () {
+      var tries = 0;
+      var iv = setInterval(function () {
+        tries++;
+        var root = document.getElementById('root');
+        if (root && root.children.length) { var b = document.getElementById('boot'); if (b) b.remove(); clearInterval(iv); }
+        if (tries > 80) clearInterval(iv);
+      }, 80);
+    })();
+  </script>
+</body>
+
+</html>
