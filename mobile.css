@@ -1,0 +1,109 @@
+/* ============================================================
+   FRACTAL ARENA — Mobile / portrait overrides
+   Active ≤ 640px (téléphone, ou fenêtre étroite / iframe mobile)
+   ============================================================ */
+@media (max-width: 640px) {
+
+  /* ---- Containers ---- */
+  .container,
+  .container.wide { max-width: 100%; padding: 18px 14px 104px; }
+
+  /* ---- Header ---- */
+  .hdr { gap: 10px; padding: 9px 13px; }
+  .hdr-logo { width: 36px; height: 36px; }
+  .hdr-title { font-size: 15px; letter-spacing: 2.5px; }
+  .hdr-sub { display: none; }
+  .chip { font-size: 11.5px; padding: 6px 9px; gap: 5px; }
+  .hdr .lang-switch button { padding: 5px 6px; font-size: 10.5px; }
+
+  /* ---- Bottom tab bar (native pattern) ---- */
+  .nav {
+    position: fixed; top: auto; bottom: 0; left: 0; right: 0;
+    justify-content: stretch; gap: 0; flex-wrap: nowrap;
+    padding: 0 2px; padding-bottom: env(safe-area-inset-bottom, 0);
+    border-top: 1px solid var(--line); border-bottom: none;
+    background: linear-gradient(0deg, rgba(7,10,18,0.98), rgba(7,10,18,0.92));
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.5);
+  }
+  .nav-tab {
+    flex: 1 1 0; min-width: 0; padding: 11px 2px 9px;
+    font-size: 10px; letter-spacing: 0.4px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .nav-tab::after { top: 0; bottom: auto; left: 22%; right: 22%; }
+
+  /* ---- Section heads ---- */
+  .h1 { font-size: 24px; }
+  .h2 { font-size: 16px; }
+
+  /* ---- Collection / card grids ---- */
+  .grid-cards { grid-template-columns: repeat(2, 1fr); gap: 11px; }
+  .card .cname { font-size: 12.5px; }
+  .stat .v { font-size: 12px; }
+  .stat .k { font-size: 8px; }
+
+  /* ---- Arena: stack the board vertically ---- */
+  .arena-board-row { flex-direction: column; gap: 10px !important; }
+  .arena-vs { width: 100% !important; flex-direction: row !important; padding: 2px 0; }
+  .arena-vs .hex { width: 50px !important; height: 56px !important; }
+  .arena-vs .hex .hex { width: 44px !important; height: 50px !important; }
+  .arena-vs .hex span { font-size: 15px !important; }
+
+  /* keep 3 combat cards per row, compact */
+  .arena-board-row .team-row { gap: 7px; }
+  .arena-board-row .card .body { padding: 7px 8px 9px; }
+  .arena-board-row .card .cname { font-size: 11px; }
+  .arena-board-row .card .cpreset { font-size: 9px; }
+  .arena-board-row .card .rar-tag { font-size: 8px; padding: 2px 5px; }
+  .arena-board-row .card .lvl-tag { font-size: 8.5px; padding: 2px 5px; }
+  .arena-board-row .bar-label { font-size: 8.5px; }
+
+  /* arena board padding */
+  .container.wide > .panel.oct { padding: 14px 12px 14px; }
+
+  /* lower section: log over controls */
+  .arena-lower { grid-template-columns: 1fr !important; }
+  .arena-lower .log { max-height: 230px !important; }
+
+  /* Combat card: stack name/preset so the preset label can't spill out of the card */
+  .arena-board-row .card .body > .flex.between { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .arena-board-row .card .cname,
+  .arena-board-row .card .cpreset { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Log header: let the terminal URL truncate instead of overflowing the panel */
+  .arena-log-head { min-width: 0; gap: 8px; }
+  .arena-log-head .h2 { flex: 0 0 auto; }
+  .arena-log-head .mono { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+
+  /* Bet tier buttons: wrap and tighten so the row never spills out at 360px */
+  .arena-bet-row { flex-wrap: wrap; }
+  .arena-bet-row .btn.sm { letter-spacing: 0.4px; padding-left: 7px; padding-right: 7px; min-width: 0; }
+
+  /* ---- Forge / Wallet two-column grids → stack ---- */
+  .summon-grid { grid-template-columns: 1fr !important; }
+  .wallet-grid { grid-template-columns: 1fr !important; }
+
+  /* ---- Sub-tabs scroll if needed ---- */
+  .subtabs { overflow-x: auto; scrollbar-width: none; }
+  .subtabs::-webkit-scrollbar { display: none; }
+  .subtab { white-space: nowrap; flex: none; }
+
+  /* ---- Modals ---- */
+  .overlay { padding: 16px; align-items: flex-end; }
+  .modal { max-width: 100%; padding: 22px 18px; }
+  .modal.wide { max-width: 100%; }
+
+  /* ---- Buttons: comfortable tap targets ---- */
+  .btn { min-height: 44px; }
+  .btn.sm { min-height: 38px; }
+
+  /* ---- Toasts above the bottom bar ---- */
+  .toast-wrap { bottom: 78px; }
+}
+
+/* Extra squeeze for very narrow phones */
+@media (max-width: 380px) {
+  .nav-tab { font-size: 9px; }
+  .hdr-title { font-size: 13.5px; letter-spacing: 2px; }
+  .chip { font-size: 11px; padding: 5px 8px; }
+}
