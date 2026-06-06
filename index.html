@@ -61,6 +61,19 @@
       }, 80);
     })();
   </script>
+  <script>
+    // Status bar sombre (texte clair) cohérente avec le fond #05070f
+    (function () {
+      function applyStatusBar() {
+        try {
+          var sb = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.StatusBar;
+          if (sb) sb.setStyle({ style: 'DARK' });
+        } catch (e) {}
+      }
+      document.addEventListener('deviceready', applyStatusBar);
+      window.addEventListener('load', applyStatusBar);
+    })();
+  </script>
 </body>
 
 </html>
