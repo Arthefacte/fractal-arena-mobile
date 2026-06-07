@@ -254,8 +254,10 @@ function Arena() {
     // continue loop only if we can afford / have free fights
     if (betTier === "") return g.freeFights > 0;
     const amt = D.ECON.BET[betTier];
-    const avail = g.useLocked ? (g.locked >= amt ? g.locked : g.liquid) : g.liquid;
-    return avail >= amt;
+    // Verrouillage ON : on ne mise QUE depuis le verrouillé. Dès qu'il ne couvre
+    // plus une mise, la boucle s'arrête — le solde disponible n'est jamais entamé.
+    if (g.useLocked) return g.locked >= amt;
+    return g.liquid + g.locked >= amt;
   }
 
   function onFight() { if (playing) return; setResult(null); playFight(false); }
