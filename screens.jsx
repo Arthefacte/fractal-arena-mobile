@@ -300,7 +300,8 @@ function DepositModal({ onClose }) {
     <Modal onClose={onClose} accent="var(--elec)">
       <div className="eyebrow" style={{ color: "var(--elec)" }}>{I18N.t("WL_DEPOSIT")}</div>
       <div className="h2" style={{ margin: "4px 0 10px" }}>{I18N.t("WL_DEP_TXID")}</div>
-      <div className="muted mono" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>{I18N.t("WL_DEP_INFO")}</div>
+      <div className="muted mono" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>{I18N.t("WL_DEP_INFO")}</div>
+      <div className="mono" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 16, color: "var(--elec)", background: "rgba(0,0,0,0.25)", border: "1px solid var(--elec)", borderRadius: 6, padding: "10px 12px" }}>{I18N.t("WL_DEP_CONFIRMS")}</div>
       <div className="panel oct" style={{ border: "1px solid var(--line)", padding: "12px 14px", marginBottom: 16 }}>
         <div className="flex between center" style={{ gap: 10 }}>
           <span className="mono muted" style={{ fontSize: 12 }}>{I18N.t("WL_REWARD_POOL")}</span>
