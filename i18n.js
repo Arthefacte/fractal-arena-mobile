@@ -141,7 +141,7 @@
     WL_WITHDRAW: { FR: "Retrait on-chain", EN: "Withdraw on-chain", ZH: "链上提取" },
     WL_DEP_INFO: { FR: "Envoie tes FRACTALARENA à l'adresse du Reward Pool, puis colle le TXID de ta transaction. Ton solde Liquide sera crédité après détection on-chain.", EN: "Send your FRACTALARENA to the Reward Pool address, then paste your transaction TXID. Your Liquid balance is credited after on-chain detection.", ZH: "将 FRACTALARENA 发送到奖励池地址，然后粘贴你的交易 TXID。链上检测后将充值至可用余额。" },
     WL_AMOUNT: { FR: "Montant", EN: "Amount", ZH: "金额" },
-    WL_DEP_CONFIRMS: { FR: "⛏ Attends 3 confirmations on-chain avant de coller le TXID.", EN: "⛏ Wait for 3 on-chain confirmations before pasting the TXID.", ZH: "⛏ 请等待 3 个链上确认后再粘贴 TXID。" },
+    WL_DEP_CONFIRMS: { FR: "⛏ Le dépôt doit être un envoi wallet-à-wallet, pas un transfert interne via InSwap. Attends 3 confirmations on-chain avant de coller le TXID.", EN: "⛏ The deposit must be a wallet-to-wallet send, not an internal transfer via InSwap. Wait for 3 on-chain confirmations before pasting the TXID.", ZH: "⛏ 充值必须是钱包到钱包的转账，不能是通过 InSwap 的内部转账。请等待 3 个链上确认后再粘贴 TXID。" },
     WL_DEP_TXID: { FR: "TXID de la transaction", EN: "Transaction TXID", ZH: "交易 TXID" },
     WL_DEP_TXID_PH: { FR: "Colle le txid (64 caractères hex)", EN: "Paste txid (64 hex chars)", ZH: "粘贴 txid（64 位十六进制）" },
     WL_DEP_TXID_INVALID: { FR: "TXID invalide — 64 caractères hexadécimaux attendus", EN: "Invalid TXID — 64 hex characters expected", ZH: "TXID 无效 — 需 64 位十六进制字符" },
