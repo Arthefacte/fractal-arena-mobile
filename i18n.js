@@ -90,7 +90,7 @@
     RES_NET: { FR: "Net", EN: "Net", ZH: "净值" },
     RES_XP: { FR: "XP par entité", EN: "XP per entity", ZH: "每实体经验" },
     RES_POOL: { FR: "Pool liquidité", EN: "Liquidity pool", ZH: "流动性池" },
-    RES_BURN: { FR: "Burn", EN: "Burn", ZH: "销毁" },
+    RES_BURN: { FR: "Mega buyback", EN: "Mega buyback", ZH: "超级回购" },
     RES_MILESTONE: { FR: "MILESTONE — +%d verrouillé", EN: "MILESTONE — +%d locked", ZH: "里程碑 — +%d 锁定" },
     RES_CONTINUE: { FR: "Continuer", EN: "Continue", ZH: "继续" },
     RES_LOCKED_GAIN: { FR: "Gain verrouillé (combat gratuit)", EN: "Locked gain (free fight)", ZH: "锁定收益（免费战斗）" },
