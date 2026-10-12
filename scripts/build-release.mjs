@@ -22,7 +22,19 @@ const ANDROID = join(ROOT, "android");
 const SORTIE = join(ANDROID, "app", "build", "outputs", "apk", "release", "app-release.apk");
 const LIVRE = join(ROOT, "FractalArena-android.apk");
 
-console.log("Build release (clé de ~/.fa-secrets/android/)…");
+function node(args) {
+  console.log("\n$ node " + args.join(" "));
+  execFileSync(process.execPath, args, { cwd: ROOT, stdio: ["ignore", "inherit", "inherit"] });
+}
+
+// Le build régénère www/ LUI-MÊME : c'est ce qui empêche de livrer une APK
+// construite sur un www/ périmé ou sur des octets qui ne sont pas ceux du site
+// (les empreintes SRI de React et le hash CSP sont vérifiés par sync-web.mjs,
+// qui ÉCHOUE plutôt que d'embarquer autre chose).
+node(["scripts/sync-web.mjs"]);
+node([join("node_modules", "@capacitor", "cli", "bin", "capacitor"), "sync", "android"]);
+
+console.log("\nBuild release (clé de ~/.fa-secrets/android/)…");
 const args = [":app:assembleRelease", "--console=plain"];
 // Sur Windows, Gradle s'appelle gradlew.bat et doit passer par cmd : appeler
 // le .bat par son chemin absolu casse dès que le dossier contient une espace

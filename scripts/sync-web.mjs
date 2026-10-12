@@ -87,10 +87,14 @@ const INTERDITS = [
 ];
 
 const TEXTES = new Set([".html", ".js", ".jsx", ".css", ".webmanifest", ".json"]);
+// Fichiers dont on normalise les fins de ligne (le site sert des LF ; un checkout
+// Windows peut avoir réécrit le fichier en CRLF — cf. l'étape 2 bis).
+const NORMALISABLES = new Set([".html", ".js", ".jsx", ".css", ".json", ".webmanifest", ".txt", ".svg"]);
 
 function echouer(msg) { console.error("\nÉCHEC — " + msg + "\n"); process.exit(1); }
 function echapper(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function sha384b64(buf) { return createHash("sha384").update(buf).digest("base64"); }
+function sha256b64(buf) { return createHash("sha256").update(buf).digest("base64"); }
 
 function parcourir(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -171,6 +175,12 @@ async function main() {
   writeFileSync(fichierIndex, html, "utf8");
 
   // ---- 3. native-env.js + app-env.json --------------------------------
+  // Le rapport d'échec : si le jeu ne démarre pas, l'écran doit le DIRE au lieu
+  // de laisser un splash qui tourne indéfiniment. Un joueur ne peut pas ouvrir
+  // une console : le seul diagnostic possible est celui qu'on affiche.
+  // Écrit en ES5 strict (var, aucune flèche, aucun gabarit) : il doit tourner
+  // même sur un WebView ancien, c'est justement le cas qu'il doit décrire.
+  const diagForce = process.env.FA_APP_DIAG === "1";
   writeFileSync(join(WWW, "native-env.js"), `/* ============================================================
    Fractal Arena — app Android : environnement natif.
    GÉNÉRÉ par scripts/sync-web.mjs (dépôt fractal-arena-mobile). Ne pas
@@ -184,14 +194,94 @@ async function main() {
       native. C'est ce qui met la session en localStorage (sinon
       sessionStorage, effacé à la fermeture : joueur déconnecté à chaque
       fois) et supprime la bannière « installer l'app » dans l'app.
+
+   3. Rapport d'échec — si le jeu ne monte pas (ou lève une erreur), un
+      panneau affiche CE QUE le WebView a dit : version, erreur, fichier
+      et ligne, état de #root, réponse de l'API. Sans lui, un WebView trop
+      ancien ne produit qu'un splash infini, indiagnosticable à distance.
    ============================================================ */
 (function () {
   window.FA_NATIVE = true;
   window.FA_NATIVE_PLATFORM = "android";
   window.FA_API_URL = ${JSON.stringify(API_PROD)};
+  window.FA_APP_DIAG = ${diagForce ? "true" : "false"};
   try {
     Object.defineProperty(window.navigator, "standalone", { value: true, configurable: true });
   } catch (e) { /* navigateur qui refuse : la session retombe en sessionStorage */ }
+
+  var ERREURS = [];
+  function noter(txt) { if (ERREURS.length < 12) ERREURS.push(txt); }
+  window.addEventListener("error", function (e) {
+    var cible = e.target && e.target.tagName ? " (" + e.target.tagName + " " + (e.target.src || e.target.href || "") + ")" : "";
+    noter("ERREUR : " + (e.message || "?") + cible + "  [" + (e.filename || "?").split("/").pop() + ":" + (e.lineno || 0) + "]");
+    // On n'AFFICHE que sur une vraie exception JS : un asset qui ne charge pas
+    // (image, son) ne doit pas couvrir le jeu d'un rapport d'erreur.
+    if (e.message) montrer();
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) {
+    noter("PROMESSE REJETEE : " + ((e.reason && (e.reason.message || e.reason)) || "?"));
+    montrer();
+  });
+
+  function versionWebView() {
+    var m = /Chrome\\/([0-9]+)/.exec(navigator.userAgent || "");
+    return m ? m[1] : "inconnue";
+  }
+
+  var panneau = null;
+  function montrer() {
+    if (panneau) return;
+    panneau = document.createElement("div");
+    panneau.id = "fa-rapport";
+    panneau.style.cssText = "position:fixed;inset:0;z-index:2147483647;overflow:auto;background:#05070f;"
+      + "color:#EAF1FF;font:12px/1.5 monospace;padding:14px;white-space:pre-wrap;word-break:break-word";
+    var t = "FRACTAL ARENA — le jeu ne démarre pas\\n"
+      + "Cette app envoie ce rapport au studio si tu le copies.\\n\\n"
+      + "APP         : client v" + (window.FA_ASSET_V || "?") + ", app Android"
+      + ${JSON.stringify(diagForce ? ' (build de diagnostic)' : "")} + "\\n"
+      + "WEBVIEW     : Chrome " + versionWebView() + "\\n"
+      + "USER-AGENT  : " + (navigator.userAgent || "?") + "\\n"
+      + "STANDALONE  : " + (navigator.standalone === true) + "\\n"
+      + "API CIBLEE  : " + window.FA_API_URL + "\\n"
+      + "REACT       : " + (typeof window.React) + " / ReactDOM " + (typeof window.ReactDOM) + "\\n"
+      + "API DU JEU  : " + (typeof window.FA_ACCOUNT) + "\\n"
+      + "#ROOT       : " + (document.getElementById("root") ? document.getElementById("root").children.length + " enfant(s)" : "absent") + "\\n"
+      + "URL         : " + location.href + "\\n\\n"
+      + (ERREURS.length ? ERREURS.join("\\n") : "aucune erreur JS captée");
+    var bloc = document.createElement("div");
+    bloc.textContent = t;
+    var copier = document.createElement("button");
+    copier.textContent = "COPIER CE RAPPORT";
+    copier.style.cssText = "display:block;margin:0 0 12px;padding:12px 16px;background:#00F0FF;color:#05070f;"
+      + "border:0;border-radius:8px;font:bold 13px system-ui";
+    copier.onclick = function () {
+      var zone = document.createElement("textarea");
+      zone.value = t; document.body.appendChild(zone); zone.select();
+      try { document.execCommand("copy"); copier.textContent = "COPIÉ"; } catch (e) { copier.textContent = "SÉLECTIONNE LE TEXTE CI-DESSOUS"; }
+      document.body.removeChild(zone);
+    };
+    panneau.appendChild(copier);
+    panneau.appendChild(bloc);
+    document.body.appendChild(panneau);
+
+    // Réponse réelle de l'API depuis CE téléphone : réseau, CORS et serveur en
+    // un seul chiffre. Une requête qui échoue ici explique bien des blocages.
+    fetch(window.FA_API_URL + "/stats", { cache: "no-store" })
+      .then(function (r) { bloc.textContent += "\\n\\nAPI /stats  : HTTP " + r.status; })
+      .catch(function (e) { bloc.textContent += "\\n\\nAPI /stats  : INJOIGNABLE — " + e.message; });
+  }
+
+  // Le jeu a 8 s pour montrer quelque chose ; sinon on affiche le rapport.
+  // (Le splash reste à l'écran tant que React n'a pas monté : c'est ce délai
+  // qui transforme un « chargement infini » en informations exploitables.)
+  if (window.FA_APP_DIAG === true) {
+    setTimeout(montrer, 1000);
+  } else {
+    setTimeout(function () {
+      var r = document.getElementById("root");
+      if (!r || r.children.length === 0) { noter("Le jeu n'a rien affiché en 8 s (React n'a pas monté)"); montrer(); }
+    }, 8000);
+  }
 })();
 `, "utf8");
 
@@ -214,6 +304,46 @@ async function main() {
       .replace(/versionCode \d+/, "versionCode " + version)
       .replace(/versionName "[^"]*"/, 'versionName "1.0 (client v' + version + ')"');
     if (neuf !== g) writeFileSync(gradle, neuf, "utf8");
+  }
+
+  // ---- 3 ter. Conformité octet pour octet avec le site ------------------
+  // Le site sert des fins de ligne LF ; un checkout Windows peut réécrire les
+  // fichiers en CRLF. Ce n'est PAS cosmétique : les scripts portent une empreinte
+  // SRI, et la CSP autorise un script en ligne par son sha256. Avec d'autres
+  // octets, le navigateur REFUSE le fichier — et le jeu ne monte jamais.
+  // Vécu le 12/10/2026 : React bloqué par sa propre intégrité dans l'APK
+  // publiée, splash infini sur le téléphone du fondateur.
+  const normalises = [];
+  for (const f of parcourir(WWW)) {
+    if (!NORMALISABLES.has(f.slice(f.lastIndexOf(".")))) continue;
+    const buf = readFileSync(f);
+    if (buf.indexOf(13) === -1) continue;
+    writeFileSync(f, buf.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
+    normalises.push(relative(WWW, f));
+  }
+  if (normalises.length) console.log("  fins de ligne normalisées en LF : " + normalises.length + " fichier(s)");
+
+  const htmlFinal = readFileSync(fichierIndex, "utf8");
+  for (const balise of htmlFinal.match(/<script[^>]*>/g) || []) {
+    const src = (balise.match(/src="([^"]+)"/) || [])[1];
+    const integ = (balise.match(/integrity="sha384-([^"]+)"/) || [])[1];
+    if (!src || !integ || /^https?:/.test(src)) continue;
+    const chemin = src.split("?")[0];
+    const abs = join(WWW, chemin);
+    if (!existsSync(abs)) echouer("ressource SRI absente de la copie : " + chemin);
+    const h = sha384b64(readFileSync(abs));
+    if (h !== integ) {
+      echouer("SRI NON CONFORME — l'APK n'embarquerait pas les octets du site :\n"
+        + "  " + chemin + "\n  attendu sha384-" + integ + "\n  obtenu  sha384-" + h);
+    }
+  }
+
+  const csp = (htmlFinal.match(/Content-Security-Policy" content="([^"]*)"/) || [])[1] || "";
+  for (const [, h] of csp.matchAll(/'sha256-([^']+)'/g)) {
+    const enLigne = [...htmlFinal.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+    if (!enLigne.some((s) => sha256b64(Buffer.from(s, "utf8")) === h)) {
+      echouer("hash CSP sha256-" + h + " ne correspond à aucun script en ligne de index.html : le navigateur le bloquera");
+    }
   }
 
   // ---- 4. Vérifications ----------------------------------------------
