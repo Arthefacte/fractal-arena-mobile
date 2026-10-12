@@ -359,6 +359,29 @@ async function main() {
     var P = (window.Capacitor && window.Capacitor.Plugins) || {};
     var BS = P.BarcodeScanner;
     if (!BS) { message("Scanner indisponible dans cette app — installe la dernière version téléchargée sur arthefacte.com.", "#F7931A"); return; }
+
+    // Les codes arrivent par ÉVÉNEMENT, pas par la valeur de retour : startScan()
+    // ouvre l'aperçu et rend la main tout de suite. Lire son retour (vécu) donnait
+    // « aucun QR lu » immédiatement, caméra jamais ouverte. On s'abonne AVANT de
+    // démarrer, et on se désabonne dès le premier code lu.
+    var pris = false;
+    var abonnements = [];
+    function detacher() {
+      for (var i = 0; i < abonnements.length; i++) { try { abonnements[i].remove(); } catch (e) { /* déjà retiré */ } }
+      abonnements = [];
+    }
+    function surCode(ev) {
+      if (pris) return;
+      var liste = ev && ev.barcodes ? ev.barcodes : [];
+      var b = liste.length ? liste[0] : null;
+      var valeur = b ? (b.rawValue || b.displayValue || "") : "";
+      if (!valeur) return;
+      pris = true;
+      try { BS.stopScan(); } catch (e) { /* rien */ }
+      detacher();
+      reclamer(valeur);
+    }
+
     message("Demande d'accès à l'appareil photo…");
     var permis = BS.requestPermissions ? BS.requestPermissions({ permissions: ["camera"] }) : Promise.resolve({ camera: "granted" });
     Promise.resolve(permis).then(function (p) {
@@ -367,20 +390,50 @@ async function main() {
         message("Accès à l'appareil photo refusé. Autorise la caméra pour Fractal Arena dans les réglages Android, puis réessaie.", "#F7931A");
         return null;
       }
-      return BS.startScan({ formats: ["QR_CODE"] }).then(function (res) {
-        var b = res && res.barcodes && res.barcodes.length ? res.barcodes[0] : null;
-        var valeur = b ? (b.rawValue || b.displayValue || "") : "";
-        if (!valeur) { message("Aucun QR lu. Réessaie en cadrant le code affiché sur ton ordinateur.", "#F7931A"); return; }
-        reclamer(valeur);
+      var abonner = [];
+      if (BS.addListener) {
+        abonner.push(BS.addListener("barcodesScanned", surCode).then(function (h) { abonnements.push(h); }));
+        abonner.push(BS.addListener("scanError", function (e) {
+          detacher();
+          message("Le scan a échoué : " + ((e && e.message) || "caméra indisponible") + ". Réessaie, ou autorise la caméra dans les réglages Android.", "#F7931A");
+        }).then(function (h) { abonnements.push(h); }));
+      }
+      return Promise.all(abonner).then(function () {
+        message("Vise le QR affiché sur ton ordinateur…");
+        return BS.startScan({ formats: ["QR_CODE"] }).catch(function (e) {
+          detacher();
+          message("La caméra n'a pas pu s'ouvrir : " + ((e && e.message) || e) + ".", "#F7931A");
+        });
       });
     }).catch(function (e) { message("Scan impossible : " + ((e && e.message) || e), "#F7931A"); });
   }
 
+  // Le jeu est-il réellement jouable ? Deux signaux POSITIFS, et rien d'autre :
+  //  - une session existe (le joueur est entré dans l'arène) ;
+  //  - ou l'écran d'accueil a fini sa cinématique (son bouton d'entrée est là).
+  // Tant qu'aucun n'est vrai (animation d'ouverture, splash), on ne propose rien :
+  // le fondateur a signalé — à raison — un bouton de liaison par-dessus la
+  // cinématique. Une détection « négative » (juste « pas de splash ») le laissait
+  // passer pendant l'animation.
+  function jeuJouable() {
+    try {
+      if (window.FA_ACCOUNT && window.FA_ACCOUNT.readToken && window.FA_ACCOUNT.readToken()) return true;
+    } catch (e) { /* stockage indisponible */ }
+    var b = document.getElementsByTagName("button");
+    for (var i = 0; i < b.length; i++) {
+      var t = (b[i].innerText || b[i].textContent || "").replace(/\s+/g, " ").toUpperCase();
+      if (t.indexOf("APPUYER POUR COMMENCER") !== -1 || t.indexOf("TAP TO START") !== -1) return true;
+    }
+    return false;
+  }
+
   function boutonLiaison() {
-    // Rien à proposer sur un appareil déjà lié, ni dans un build de diagnostic.
+    // Rien à proposer sur un appareil déjà lié, ni dans un build de diagnostic,
+    // ni tant que le jeu n'est pas réellement jouable (animation, splash).
     if (window.FA_APP_DIAG === true) return;
     if (!window.FA_ACCOUNT || !window.FA_DEVICE_LINK) return;
     if (window.FA_ACCOUNT.estAppareilLie()) return;
+    if (!jeuJouable()) return;
     if (document.getElementById("fa-lier")) return;
     var b = document.createElement("button");
     b.id = "fa-lier";
@@ -391,9 +444,19 @@ async function main() {
       + "color:#00F0FF;font:600 12px system-ui;box-shadow:0 6px 22px rgba(0,0,0,.5)";
     document.body.appendChild(b);
   }
-  // Après le montage du jeu (sinon le bouton serait retiré avec le splash), et
-  // seulement si l'appareil n'est pas déjà lié à un compte.
-  setTimeout(function () { try { boutonLiaison(); } catch (e) { /* purement décoratif */ } }, 4000);
+  // Le jeu met plusieurs secondes à monter, et le bouton n'a de sens que dans
+  // l'arène : on suit l'état (il apparaît quand le joueur entre, disparaît s'il
+  // revient à l'accueil) au lieu de le poser une fois pour toutes.
+  setInterval(function () {
+    try {
+      if (!jeuJouable() || window.FA_ACCOUNT.estAppareilLie()) {
+        var b = document.getElementById("fa-lier");
+        if (b) b.remove();
+        return;
+      }
+      boutonLiaison();
+    } catch (e) { /* purement décoratif */ }
+  }, 2000);
 
   /* ============================================================
      MISE À JOUR DU JEU (le client, pas l'APK).
