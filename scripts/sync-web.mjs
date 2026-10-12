@@ -175,7 +175,26 @@ async function main() {
 
   const ancreData = /<script src="data\.js\?v=[^"]*"><\/script>/;
   if (!ancreData.test(html)) echouer("balise data.js introuvable : l'ancre de l'override API a bougé");
-  html = html.replace(ancreData, (m) => m + '\r\n  <script src="native-env.js"></script>');
+  html = html.replace(ancreData, (m) => m + "\n  <script src=\"native-env.js\"></script>");
+
+  // ---- 2 bis. La CSP doit autoriser la lecture de la version publiée -------
+  // Le client verrouille `connect-src` sur sa propre origine et l'API : une
+  // requête vers l'hôte du manifeste de version est REFUSÉE par le navigateur.
+  // Vécu le 12/10/2026 : l'app ne pouvait lire aucune mise à jour, et l'échec
+  // était silencieux (le catch avalait le refus de la CSP).
+  // PIÈGE : le fichier contient un COMMENTAIRE qui parle de « connect-src » bien
+  // avant la balise. Un remplacement sur tout le fichier tombait dedans et
+  // laissait la vraie directive intacte (vérifié : la mise à jour restait
+  // bloquée). On ne touche donc QUE le contenu de la balise CSP.
+  const hoteManifeste = new URL(SOURCE_BUNDLE).origin;
+  const baliseCsp = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)"\s*\/?>/);
+  if (!baliseCsp) echouer("balise Content-Security-Policy introuvable dans index.html");
+  const cspAvant = (baliseCsp[1].match(/connect-src ([^;]*);/) || [])[1];
+  if (!cspAvant) echouer("directive connect-src introuvable dans la CSP de index.html");
+  if (!cspAvant.includes(hoteManifeste)) {
+    const cspNeuf = baliseCsp[1].replace(/connect-src [^;]*;/, "connect-src " + cspAvant.trim() + " " + hoteManifeste + ";");
+    html = html.replace(baliseCsp[0], '<meta http-equiv="Content-Security-Policy" content="' + cspNeuf + '">');
+  }
 
   writeFileSync(fichierIndex, html, "utf8");
 
@@ -471,6 +490,20 @@ async function main() {
      POST, ce que GitHub ne sert pas) ; le plugin ne fait qu'installer le
      paquet — et revenir en arrière tout seul si le nouveau ne démarre pas.
      ============================================================ */
+  // Comparaison de versions par SEGMENTS. Le raccourci « ne garder que les
+  // chiffres » est faux : « 335.1 » y devient 3351, donc plus grand que « 999 » —
+  // et l'app se croirait en retard sur une version plus ancienne (attrapé par
+  // scripts/verif-maj.mjs).
+  function comparerVersions(a, b) {
+    var pa = String(a || "0").split("."), pb = String(b || "0").split(".");
+    var n = Math.max(pa.length, pb.length);
+    for (var i = 0; i < n; i++) {
+      var x = parseInt(pa[i], 10) || 0, y = parseInt(pb[i], 10) || 0;
+      if (x !== y) return x < y ? -1 : 1;
+    }
+    return 0;
+  }
+
   function verifierMiseAJour(U) {
     fetch(${JSON.stringify(SOURCE_BUNDLE)} + "?t=" + Date.now(), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -479,11 +512,10 @@ async function main() {
         return fetch("app-env.json", { cache: "no-store" })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (local) {
-            var dist = parseInt(String(d.version).replace(/[^0-9]/g, ""), 10) || 0;
-            var ici = parseInt(String((local && local.versionWeb) || "0").replace(/[^0-9]/g, ""), 10) || 0;
+            var ici = (local && local.versionWeb) || "0";
             // Jamais de rétrogradation, et une seule tentative par version :
             // un paquet qui échoue ne doit pas retenter à chaque lancement.
-            if (dist <= ici) return null;
+            if (comparerVersions(d.version, ici) <= 0) return null;
             var cle = "fa_maj_tentee_" + d.version;
             try { if (localStorage.getItem(cle)) return null; localStorage.setItem(cle, "1"); } catch (e) { /* stockage plein */ }
             message("Mise à jour du jeu v" + d.version + " en cours de téléchargement…");
@@ -497,7 +529,12 @@ async function main() {
             });
           });
       })
-      .catch(function () { /* hors ligne : le client embarqué fait tourner le jeu */ });
+      .catch(function (e) {
+        // Visible en console : un refus (CSP, réseau, hôte injoignable) ne doit
+        // pas être avalé sans trace — c'est ce silence qui a caché, le
+        // 12/10/2026, que l'app ne pouvait lire aucune mise à jour.
+        try { console.warn("MAJ : version publiée illisible — " + ((e && e.message) || e)); } catch (e2) { /* rien */ }
+      });
   }
 
   var PLUGINS = (window.Capacitor && window.Capacitor.Plugins) || {};
@@ -582,6 +619,14 @@ async function main() {
   }
   if (!/native-env\.js/.test(readFileSync(join(WWW, "index.html"), "utf8"))) echouer("native-env.js n'a pas été inséré");
   if (/unpkg\.com\/react/.test(readFileSync(join(WWW, "index.html"), "utf8"))) echouer("React pointe encore vers unpkg");
+  // Le manifeste de version doit être joignable DEPUIS L'APP : sans cet hôte dans
+  // connect-src, aucune mise à jour du jeu ne peut être détectée (et l'échec est
+  // silencieux côté joueur — c'est ce qui s'est produit le 12/10/2026). On lit la
+  // balise CSP, jamais le fichier entier : un commentaire parle aussi de connect-src.
+  const cspFinale = (readFileSync(join(WWW, "index.html"), "utf8").match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)"\s*\/?>/) || [])[1] || "";
+  if (!new RegExp("connect-src [^;]*" + echapper(hoteManifeste)).test(cspFinale)) {
+    echouer("la CSP n'autorise pas " + hoteManifeste + " : l'app ne pourrait lire aucune mise à jour");
+  }
 
   const mo = (taille(WWW) / 1048576).toFixed(1);
   console.log("www/ généré depuis " + WEB);
