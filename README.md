@@ -71,6 +71,34 @@ Une app native ne peut PAS recevoir le lien entrant du QR (contrairement à un
 navigateur, où l'appareil photo du système ouvre l'URL) : d'où le scanner
 embarqué. Coût : ML Kit ajoute ~10 Mo à l'APK.
 
+## Mise à jour du jeu (sans réinstaller l'APK)
+
+L'APK embarque un instantané du client ; sans mécanisme, chaque livraison du jeu
+obligerait chaque joueur à retélécharger l'APK. L'app lit donc la version
+publiée (`app-bundle.json` sur `main`), télécharge le paquet zip **en
+arrière-plan** et l'installe **au lancement suivant** : ni coupure de partie, ni
+attente de 40 Mo devant l'écran de démarrage.
+
+```bash
+npm run bundle        # produit dist/bundle-<version>.zip + app-bundle.json
+gh release upload v<version> dist/bundle-<version>.zip --repo Arthefacte/fractal-arena-mobile
+# puis committer + pousser app-bundle.json sur main : c'est CE fichier qui annonce la mise à jour
+```
+
+- `@capgo/capacitor-updater` est **auto-hébergé** : `updateUrl`/`statsUrl` vides,
+  aucune télémétrie tierce. C'est nous qui comparons les versions (l'endpoint du
+  plugin se vérifie en POST, ce que GitHub ne sert pas) ; le plugin installe le
+  paquet et **revient en arrière** tout seul si le nouveau ne démarre pas.
+- `notifyAppReady()` est appelé au démarrage : **sans cet acquittement, le plugin
+  revient à la version précédente** au lancement suivant.
+- Jamais de rétrogradation, une seule tentative par version, et le client
+  embarqué continue de faire tourner le jeu si le réseau manque.
+- L'URL du zip est **figée par version** (jamais « latest ») : un cache CDN ne
+  peut pas servir les octets d'une version en annonçant une autre.
+- Contraintes de build : `androidx.work` verrouillé en 2.9.0 (le plugin tirait
+  2.10.5, qui exige `compileSdk 35`, alors que le projet est resté sur le
+  template Capacitor 6.0 en 34) et `minSdk 23` — **Android 6.0 minimum**.
+
 ## Publier une version téléchargeable
 
 ```bash
