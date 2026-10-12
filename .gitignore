@@ -1,2 +1,7 @@
 node_modules/
 www/
+
+# Sorties des contrôles locaux (captures, rapports de vérification)
+capture-*.png
+rapport-*.json
+*-out.txt

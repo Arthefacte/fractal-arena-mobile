@@ -1,5 +1,13 @@
 {
   "appId": "com.fractalarena.app",
   "appName": "Fractal Arena",
-  "webDir": "www"
+  "webDir": "www",
+  "backgroundColor": "#05070f",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#05070f"
+  }
 }
