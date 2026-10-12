@@ -5,5 +5,10 @@ www/
 capture-*.png
 rapport-*.json
 *-out.txt
+
+# Paquets de mise à jour (le zip va en asset de release, pas dans le dépôt ;
+# app-bundle.json, lui, EST versionné : c'est lui qui annonce la version)
+dist/
+bundle-*.zip
 # APK livrable (produite par npm run apk:release, publiée en release GitHub)
 FractalArena-android.apk

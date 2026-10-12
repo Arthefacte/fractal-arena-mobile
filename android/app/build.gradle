@@ -58,6 +58,19 @@ repositories {
     }
 }
 
+// Le plugin de mise à jour tire androidx.work 2.10.5, qui exige compileSdk 35.
+// Ce projet est resté sur le template Capacitor 6.0 (compileSdk 34) : on force
+// la dernière version compatible 34 au lieu de monter toute la chaîne AGP/SDK
+// maintenant. L'API utilisée par le plugin (travail en arrière-plan) est stable
+// d'une version à l'autre. Monter en SDK 35 est un chantier à part — il le
+// faudra pour publier sur le Play Store, pas pour installer l'APK directement.
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.work:work-runtime:2.9.0'
+        force 'androidx.work:work-runtime-ktx:2.9.0'
+    }
+}
+
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"

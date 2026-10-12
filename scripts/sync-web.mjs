@@ -47,6 +47,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WEB = process.env.FA_WEB_DIR ? resolve(process.env.FA_WEB_DIR) : resolve(ROOT, "..", "fractal-arena-web");
 const WWW = resolve(ROOT, "www");
 const API_PROD = "https://fractal-arena-server-production.up.railway.app";
+// Où l'app lit la dernière version publiée du JEU (le client, pas l'APK).
+// Fichier versionné sur la branche main du dépôt de l'app : une livraison de
+// jeu = un paquet zip en release + ce fichier mis à jour.
+const SOURCE_BUNDLE = "https://raw.githubusercontent.com/Arthefacte/fractal-arena-mobile/main/app-bundle.json";
 
 // Tout ce qui n'est pas appelé au runtime du jeu : dev, docs, art de
 // référence, protos de chantier, service worker, fichiers d'infra.
@@ -56,6 +60,7 @@ const EXCLUS = new Set([
   "CNAME", "Caddyfile", "robots.txt", "sitemap.xml", "llms.txt",
   "sw.js", "sw-register.js", "sw-policy.js",
   "package.json", "package-lock.json", "README.md", ".gitignore",
+  ".gitattributes", ".nojekyll",
   "serve_unity.py",
 ]);
 
@@ -389,6 +394,57 @@ async function main() {
   // Après le montage du jeu (sinon le bouton serait retiré avec le splash), et
   // seulement si l'appareil n'est pas déjà lié à un compte.
   setTimeout(function () { try { boutonLiaison(); } catch (e) { /* purement décoratif */ } }, 4000);
+
+  /* ============================================================
+     MISE À JOUR DU JEU (le client, pas l'APK).
+
+     L'APK embarque un instantané du client : sans ce mécanisme, chaque
+     livraison du jeu obligerait chaque joueur à retélécharger et réinstaller
+     l'APK. Ici l'app lit la version publiée, télécharge le paquet en
+     arrière-plan et le laisse s'installer au LANCEMENT SUIVANT : aucune
+     coupure de partie, aucune attente de 45 Mo devant l'écran de démarrage.
+
+     C'est NOUS qui vérifions la version (l'endpoint du plugin se contrôle en
+     POST, ce que GitHub ne sert pas) ; le plugin ne fait qu'installer le
+     paquet — et revenir en arrière tout seul si le nouveau ne démarre pas.
+     ============================================================ */
+  function verifierMiseAJour(U) {
+    fetch(${JSON.stringify(SOURCE_BUNDLE)} + "?t=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.version || !d.url) return null;
+        return fetch("app-env.json", { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (local) {
+            var dist = parseInt(String(d.version).replace(/[^0-9]/g, ""), 10) || 0;
+            var ici = parseInt(String((local && local.versionWeb) || "0").replace(/[^0-9]/g, ""), 10) || 0;
+            // Jamais de rétrogradation, et une seule tentative par version :
+            // un paquet qui échoue ne doit pas retenter à chaque lancement.
+            if (dist <= ici) return null;
+            var cle = "fa_maj_tentee_" + d.version;
+            try { if (localStorage.getItem(cle)) return null; localStorage.setItem(cle, "1"); } catch (e) { /* stockage plein */ }
+            message("Mise à jour du jeu v" + d.version + " en cours de téléchargement…");
+            return U.download({ url: d.url, version: String(d.version) }).then(function (b) {
+              return U.set({ id: b.id }).then(function () {
+                message("Mise à jour prête ✓ Elle s'installera au prochain lancement de l'app.", "#23E27A");
+              });
+            }).catch(function (e) {
+              try { localStorage.removeItem(cle); } catch (e2) { /* rien */ }
+              message("Mise à jour impossible pour l'instant (" + ((e && e.message) || e) + "). Le jeu actuel continue de fonctionner.", "#F7931A");
+            });
+          });
+      })
+      .catch(function () { /* hors ligne : le client embarqué fait tourner le jeu */ });
+  }
+
+  var PLUGINS = (window.Capacitor && window.Capacitor.Plugins) || {};
+  if (PLUGINS.CapacitorUpdater) {
+    // OBLIGATOIRE : sans cet acquittement, le plugin considère que le bundle
+    // n'a pas démarré et REVIENT à la version précédente au lancement suivant.
+    try { PLUGINS.CapacitorUpdater.notifyAppReady(); } catch (e) { /* version de plugin sans acquittement */ }
+    // 5 s après le démarrage : on ne retarde ni le splash ni la cinématique.
+    setTimeout(function () { try { verifierMiseAJour(PLUGINS.CapacitorUpdater); } catch (e) { /* rien */ } }, 5000);
+  }
 })();
 `, "utf8");
 

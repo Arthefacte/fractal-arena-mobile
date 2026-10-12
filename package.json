@@ -10,13 +10,15 @@
     "sync": "npm run build:web && cap sync android",
     "apk": "npm run sync && cd android && ./gradlew assembleDebug",
     "apk:release": "node scripts/build-release.mjs",
+    "bundle": "node scripts/build-bundle.mjs",
     "ouvrir": "cap open android"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^6.2.0",
     "@capacitor/android": "^6.0.0",
     "@capacitor/core": "^6.0.0",
-    "@capacitor/status-bar": "^6.0.0"
+    "@capacitor/status-bar": "^6.0.0",
+    "@capgo/capacitor-updater": "^6.51.23"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.0.0"
