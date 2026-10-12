@@ -388,6 +388,7 @@ function Perso() {
               <span className="h2" style={{ fontSize: 15, color: g.holderDays >= 360 ? "var(--fire)" : "var(--text)" }}>✦ {I18N.t("PE_BADGE")}</span>
               <span className="pill">{Math.min(360, g.holderDays)}/360</span>
             </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.4, fontStyle: "italic" }}>{I18N.t("PE_BADGE_HINT")}</div>
             <div className="muted mono" style={{ fontSize: 12, marginTop: 8 }}>{I18N.t("PE_BADGE_DESC", g.holderDays)}</div>
             <Bar frac={g.holderDays / 360} kind="xp" className="" />
           </div>

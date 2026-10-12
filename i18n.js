@@ -173,6 +173,7 @@
     PE_TITLE_SET: { FR: "Titre mis à jour", EN: "Title updated", ZH: "称号已更新" },
     PE_BADGE: { FR: "Badge fidélité", EN: "Loyalty badge", ZH: "忠诚徽章" },
     PE_BADGE_DESC: { FR: "%d / 360 jours ≥ 1 000 000 FA on-chain", EN: "%d / 360 days ≥ 1,000,000 FA on-chain", ZH: "%d / 360 天 ≥ 1,000,000 链上 FA" },
+    PE_BADGE_HINT: { FR: "Seuls les FA détenus directement dans ton wallet comptent — ceux fournis en liquidité ou listés à la vente sur le DEX ne sont pas pris en compte.", EN: "Only FA held directly in your wallet count — those provided as DEX liquidity or listed for sale don't count.", ZH: "仅钱包中直接持有的 FA 计入 — 提供给 DEX 流动性或挂单出售的 FA 不计入。" },
 
     // options
     OP_TITLE: { FR: "Options", EN: "Options", ZH: "设置" },
