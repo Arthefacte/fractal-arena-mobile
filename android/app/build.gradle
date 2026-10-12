@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// Clé de signature release : HORS du dépôt (~/.fa-secrets/android/), jamais
+// versionnée. Créée une fois par scripts/creer-cle-release.mjs. Sans elle,
+// `assembleRelease` s'arrête avec un message clair au lieu de produire une
+// APK non signée (ininstallable) qu'on croirait bonne.
+def propsCle = new Properties()
+def fichierCle = file(System.getenv("FA_KEYSTORE_PROPS") ?: "${System.properties['user.home']}/.fa-secrets/android/keystore.properties")
+def aCle = fichierCle.exists()
+if (aCle) { fichierCle.withInputStream { propsCle.load(it) } }
+
 android {
     namespace "com.fractalarena.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -16,10 +25,29 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (aCle) {
+                storeFile file(propsCle['storeFile'])
+                storePassword propsCle['storePassword']
+                keyAlias propsCle['keyAlias']
+                keyPassword propsCle['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (aCle) { signingConfig signingConfigs.release }
+        }
+    }
+}
+
+tasks.whenTaskAdded { t ->
+    if (!aCle && (t.name == 'assembleRelease' || t.name == 'bundleRelease')) {
+        t.doFirst {
+            throw new GradleException("Clé de signature absente : " + fichierCle + " — la créer avec node scripts/creer-cle-release.mjs")
         }
     }
 }

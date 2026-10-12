@@ -5,3 +5,5 @@ www/
 capture-*.png
 rapport-*.json
 *-out.txt
+# APK livrable (produite par npm run apk:release, publiée en release GitHub)
+FractalArena-android.apk

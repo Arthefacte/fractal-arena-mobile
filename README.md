@@ -58,6 +58,22 @@ Les deux scripts pilotent un Chromium headless (Playwright déjà installé sur 
 poste, chemin en dur dans les scripts — outillage local, pas de dépendance de
 build). Le second écrit `capture-accueil.png`.
 
+## Publier une version téléchargeable
+
+```bash
+npm run apk:release     # build SIGNÉ (clé de release) → FractalArena-android.apk
+gh release create v<version> "FractalArena-android.apk" --repo Arthefacte/fractal-arena-mobile
+```
+
+- La clé de signature vit **hors du dépôt** : `~/.fa-secrets/android/` (`.jks` +
+  `keystore.properties`), créée une fois par `node scripts/creer-cle-release.mjs`.
+  Elle doit être **sauvegardée ailleurs** : la perdre, c'est ne plus pouvoir livrer
+  de mise à jour qui s'installe par-dessus l'app déjà installée.
+- Le nom du fichier publié (`FractalArena-android.apk`) est un **contrat public** :
+  la vitrine arthefacte.com pointe
+  `releases/latest/download/FractalArena-android.apk`. Garder ce nom à chaque
+  release — sinon le bouton du site casse.
+
 ## Limites connues, à savoir avant de promettre
 
 - **La signature wallet impossible dans l'app** : le seul chemin de signature sur
