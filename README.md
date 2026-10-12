@@ -58,6 +58,19 @@ Les deux scripts pilotent un Chromium headless (Playwright déjà installé sur 
 poste, chemin en dur dans les scripts — outillage local, pas de dépendance de
 build). Le second écrit `capture-accueil.png`.
 
+## Liaison d'un compte existant (QR)
+
+Dans l'app, un bouton « 📷 Lier mon compte (QR du PC) » s'affiche tant que
+l'appareil n'est pas lié. Il ouvre la caméra (permission demandée par le plugin
+ML Kit — c'est le seul usage de la caméra), lit le QR affiché par le jeu sur
+l'ordinateur, puis réclame le code (`POST /auth/device-claim`) : l'app devient
+une session du même compte. Le code vit 2 minutes — affiche le QR et scanne dans
+la foulée. Le bouton disparaît une fois l'appareil lié.
+
+Une app native ne peut PAS recevoir le lien entrant du QR (contrairement à un
+navigateur, où l'appareil photo du système ouvre l'URL) : d'où le scanner
+embarqué. Coût : ML Kit ajoute ~10 Mo à l'APK.
+
 ## Publier une version téléchargeable
 
 ```bash

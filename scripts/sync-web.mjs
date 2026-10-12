@@ -282,6 +282,113 @@ async function main() {
       if (!r || r.children.length === 0) { noter("Le jeu n'a rien affiché en 8 s (React n'a pas monté)"); montrer(); }
     }, 8000);
   }
+
+  /* ============================================================
+     LIAISON D'APPAREIL — scanner le QR du PC.
+
+     Le PC (session authentifiée) demande un code à /auth/device-link et
+     l'affiche en QR ; ce téléphone le réclame à /auth/device-claim et devient
+     une session du MÊME compte. Dans un navigateur, le QR se scanne avec
+     l'appareil photo du système, qui ouvre le lien entrant. Une app native n'a
+     AUCUN moyen de recevoir ce lien : elle doit donc scanner elle-même — d'où
+     la caméra et son autorisation (demandée par le plugin ML Kit, jamais en
+     silence).
+     ============================================================ */
+  function message(txt, couleur) {
+    var m = document.getElementById("fa-message");
+    if (!m) {
+      m = document.createElement("div");
+      m.id = "fa-message";
+      m.style.cssText = "position:fixed;left:12px;right:12px;bottom:74px;z-index:2147483000;"
+        + "padding:11px 14px;border-radius:10px;background:rgba(5,7,15,.94);border:1px solid rgba(0,240,255,.35);"
+        + "color:#EAF1FF;font:13px/1.45 system-ui;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.55)";
+      document.body.appendChild(m);
+    }
+    m.style.borderColor = couleur || "rgba(0,240,255,.35)";
+    m.textContent = txt;
+    m.style.display = "block";
+  }
+
+  function codeDepuis(valeur) {
+    var DL = window.FA_DEVICE_LINK;
+    if (!DL) return null;
+    // Le QR porte l'URL de liaison (origin + "/#link=" + CODE) ; codeFromInput
+    // tolère aussi un code recopié. Le pont openDapp (base64) est accepté en
+    // secours : un QR plus ancien peut avoir cette forme.
+    var code = DL.codeFromInput(valeur);
+    if (code) return code;
+    var m = /[?&]data=([^&]+)/.exec(valeur || "");
+    if (m) {
+      try { code = DL.codeFromInput(JSON.parse(atob(decodeURIComponent(m[1])))[0]); } catch (e) { /* pas un lien openDapp */ }
+    }
+    return code;
+  }
+
+  function reclamer(valeur) {
+    var ACC = window.FA_ACCOUNT, DL = window.FA_DEVICE_LINK;
+    var code = codeDepuis(valeur);
+    if (!ACC || !DL) { message("Le jeu n'est pas encore chargé — réessaie dans un instant.", "#F7931A"); return; }
+    if (!code) { message("Ce QR n'est pas un code de liaison Fractal Arena.", "#F7931A"); return; }
+    message("Liaison en cours…");
+    fetch(window.FA_API_URL + "/auth/device-claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: code }),
+    }).then(function (r) {
+      if (r.status === 400 || r.status === 401) throw new Error("Code invalide, expiré ou déjà utilisé. Redemande un QR sur ton ordinateur.");
+      if (r.status === 429) throw new Error("Trop de tentatives — patiente une minute.");
+      if (!r.ok) throw new Error("Le serveur n'a pas pu répondre (HTTP " + r.status + "). Réessaie.");
+      return r.json();
+    }).then(function (d) {
+      if (!d || !d.token || !d.wallet) throw new Error("Réponse inattendue du serveur.");
+      // L'ORDRE compte : le marqueur de liaison décide du stockage du jeton
+      // (localStorage) — écrit après le jeton, il serait perdu à la fermeture.
+      ACC.markDeviceLinked();
+      ACC.writeToken(d.token, d.kind === "generated" ? ACC.KIND_GENERATED : ACC.KIND_UNISAT);
+      message("Compte lié ✓ Ouverture…", "#23E27A");
+      setTimeout(function () { location.reload(); }, 900);
+    }).catch(function (e) { message(e.message || String(e), "#F7931A"); });
+  }
+
+  function scanner() {
+    var P = (window.Capacitor && window.Capacitor.Plugins) || {};
+    var BS = P.BarcodeScanner;
+    if (!BS) { message("Scanner indisponible dans cette app — installe la dernière version téléchargée sur arthefacte.com.", "#F7931A"); return; }
+    message("Demande d'accès à l'appareil photo…");
+    var permis = BS.requestPermissions ? BS.requestPermissions({ permissions: ["camera"] }) : Promise.resolve({ camera: "granted" });
+    Promise.resolve(permis).then(function (p) {
+      var etat = p && p.camera ? p.camera : "granted";
+      if (etat !== "granted" && etat !== "limited") {
+        message("Accès à l'appareil photo refusé. Autorise la caméra pour Fractal Arena dans les réglages Android, puis réessaie.", "#F7931A");
+        return null;
+      }
+      return BS.startScan({ formats: ["QR_CODE"] }).then(function (res) {
+        var b = res && res.barcodes && res.barcodes.length ? res.barcodes[0] : null;
+        var valeur = b ? (b.rawValue || b.displayValue || "") : "";
+        if (!valeur) { message("Aucun QR lu. Réessaie en cadrant le code affiché sur ton ordinateur.", "#F7931A"); return; }
+        reclamer(valeur);
+      });
+    }).catch(function (e) { message("Scan impossible : " + ((e && e.message) || e), "#F7931A"); });
+  }
+
+  function boutonLiaison() {
+    // Rien à proposer sur un appareil déjà lié, ni dans un build de diagnostic.
+    if (window.FA_APP_DIAG === true) return;
+    if (!window.FA_ACCOUNT || !window.FA_DEVICE_LINK) return;
+    if (window.FA_ACCOUNT.estAppareilLie()) return;
+    if (document.getElementById("fa-lier")) return;
+    var b = document.createElement("button");
+    b.id = "fa-lier";
+    b.textContent = "📷 Lier mon compte (QR du PC)";
+    b.onclick = scanner;
+    b.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:2147482999;"
+      + "padding:10px 15px;border-radius:999px;border:1px solid rgba(0,240,255,.45);background:rgba(5,7,15,.9);"
+      + "color:#00F0FF;font:600 12px system-ui;box-shadow:0 6px 22px rgba(0,0,0,.5)";
+    document.body.appendChild(b);
+  }
+  // Après le montage du jeu (sinon le bouton serait retiré avec le splash), et
+  // seulement si l'appareil n'est pas déjà lié à un compte.
+  setTimeout(function () { try { boutonLiaison(); } catch (e) { /* purement décoratif */ } }, 4000);
 })();
 `, "utf8");
 

@@ -39,4 +39,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Caméra : uniquement pour scanner le QR de liaison affiché sur le PC
+         (ML Kit, plugin @capacitor-mlkit/barcode-scanning). Sans elle, un
+         compte existant ne peut pas être rejoint depuis l'app. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>
