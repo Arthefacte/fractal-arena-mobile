@@ -1,54 +1,67 @@
-/* Vérifie que l'app PEUT lire la version publiée et déclencher une mise à jour.
-   Deux choses à prouver, avec un faux plugin natif et sans toucher à rien :
-   1. la requête vers le manifeste n'est pas bloquée par la CSP (c'était le bug :
-      vérifié dans le vrai navigateur, pas en lisant le code) ;
-   2. quand la version publiée est plus récente que celle du bundle, l'app appelle
-      bien download() avec la bonne URL et la bonne version, puis set() — et
-      JAMAIS de rétrogradation quand elle est identique ou plus ancienne. */
-import { createRequire } from "node:module";
-
-const require = createRequire("C:/Users/PC/AppData/Local/hermes/hermes-agent/package.json");
-const { chromium } = require("playwright-core");
-
-const MANIFESTE = "https://raw.githubusercontent.com/Arthefacte/fractal-arena-mobile/main/app-bundle.json";
-const navigateur = await chromium.launch({ headless: true });
-
-async function essai(versionLocale, libelle) {
-  const page = await navigateur.newPage({ viewport: { width: 412, height: 915 } });
-  const avertissements = [];
-
-  await page.addInitScript(() => {
-    window.__maj = { notifie: 0, telechargements: [], applique: [] };
-    window.Capacitor = window.Capacitor || {};
-    window.Capacitor.Plugins = window.Capacitor.Plugins || {};
-    window.Capacitor.Plugins.CapacitorUpdater = {
-      notifyAppReady: () => { window.__maj.notifie++; return Promise.resolve({}); },
-      download: (o) => { window.__maj.telechargements.push({ url: o.url, version: o.version }); return Promise.resolve({ id: "bundle-factice", version: o.version }); },
-      set: (o) => { window.__maj.applique.push(o.id); return Promise.resolve(); },
-    };
+/* Contrat JS dans un vrai navigateur + CSP. Ce contrôle ne prouve PAS le
+   téléchargement Android : UpdateContractTest exerce séparément le plugin natif.
+   Usage : node scripts/verif-maj.mjs [--published]
+   Sans --published, on intercepte uniquement le manifeste avec le fichier local.
+   Avec --published, le vrai manifeste public doit égaler le manifeste local. */
+import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const require=createRequire('C:/Users/PC/AppData/Local/hermes/hermes-agent/package.json');
+const {chromium}=require('playwright-core');
+const root=path.resolve(import.meta.dirname,'..');
+const www=path.join(root,'www');
+const manifestUrl='https://raw.githubusercontent.com/Arthefacte/fractal-arena-mobile/main/app-bundle.json';
+const manifest=JSON.parse(fs.readFileSync(path.join(root,'app-bundle.json'),'utf8'));
+const checksum=createHash('sha256').update(fs.readFileSync(path.join(root,'dist',path.basename(new URL(manifest.url).pathname)))).digest('hex');
+assert.equal(manifest.checksum,checksum);
+const published=process.argv.includes('--published');
+const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.webp':'image/webp','.png':'image/png','.mp3':'audio/mpeg','.woff2':'font/woff2'};
+const server=http.createServer((req,res)=>{
+ const pathname=new URL(req.url,'http://localhost').pathname;
+ const f=path.resolve(www,'.'+(pathname==='/'?'/index.html':decodeURIComponent(pathname)));
+ if(!f.startsWith(www+path.sep)){res.writeHead(403).end();return;}
+ try{res.writeHead(200,{'Content-Type':mime[path.extname(f)]||'application/octet-stream'});res.end(fs.readFileSync(f));}catch{res.writeHead(404).end();}
+});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const browser=await chromium.launch({headless:true});
+try{
+ for(const version of ['0',manifest.version,'999999']){
+  const page=await browser.newPage({viewport:{width:412,height:915}});
+  await page.addInitScript(({expected})=>{
+   window.__update={ready:0,downloads:[],next:[],sets:[],rejected:[]};
+   window.Capacitor={Plugins:{CapacitorUpdater:{
+    notifyAppReady:()=>{window.__update.ready++;return Promise.resolve();},
+    download:o=>{
+     window.__update.downloads.push(o);
+     if(!o.checksum||o.checksum!==expected.checksum||o.url!==expected.url||o.version!==expected.version){window.__update.rejected.push(o);return Promise.reject(new Error('Native checksum contract violated'));}
+     return Promise.resolve({id:'contract-only'});
+    },
+    next:o=>{window.__update.next.push(o);return Promise.resolve();},
+    set:o=>{window.__update.sets.push(o);return Promise.reject(new Error('set would interrupt the game'));}
+   }}};
+  },{expected:manifest});
+  await page.route('**/*',route=>{
+   const r=route.request(),u=new URL(r.url());
+   if(r.method()!=='GET')return route.abort();
+   if(u.pathname==='/app-env.json')return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({versionWeb:version})});
+   if(u.href.startsWith(manifestUrl)&&!published)return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(manifest)});
+   if(u.hostname==='127.0.0.1'||u.href.startsWith(manifestUrl))return route.continue();
+   return route.abort();
   });
-
-  // On simule la version embarquée dans le bundle (l'app installée en a une).
-  await page.route("**/app-env.json*", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ versionWeb: versionLocale }) }));
-
-  page.on("console", (m) => { if (m.type() === "warning" || m.type() === "error") avertissements.push(m.text().slice(0, 160)); });
-
-  await page.goto("http://localhost:8099/", { waitUntil: "load", timeout: 60000 });
-
-  // Preuve directe de l'état CSP : la page peut-elle joindre le manifeste ?
-  const joignable = await page.evaluate(async (url) => {
-    try { const r = await fetch(url, { cache: "no-store" }); return "HTTP " + r.status; } catch (e) { return "REFUSÉ : " + e.message; }
-  }, MANIFESTE);
-
-  await page.waitForTimeout(9000);
-  const resultat = await page.evaluate(() => window.__maj);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'load'});
+  const live=await page.evaluate(async m=>{const r=await fetch(m+'?probe='+Date.now(),{cache:'no-store'});return {status:r.status,data:await r.json()};},manifestUrl);
+  assert.equal(live.status,200);assert.deepEqual(live.data,manifest);
+  await page.waitForTimeout(8500);
+  const actual=await page.evaluate(()=>window.__update);
+  assert.ok(actual.ready>0);assert.deepEqual(errors,[]);assert.deepEqual(actual.rejected,[]);
+  assert.deepEqual(actual.downloads,version==='0'?[manifest]:[]);
+  assert.deepEqual(actual.next,version==='0'?[{id:'contract-only'}]:[]);
+  assert.deepEqual(actual.sets,[]);
+  console.log(JSON.stringify({version,source:published?'public manifest':'local manifest',actual,errors}));
   await page.close();
-  return { libelle, versionLocale, joignable, ...resultat, avertissements };
-}
-
-const recent = await essai("335", "version locale plus ancienne → doit mettre à jour");
-const aJour = await essai("999", "version locale plus récente → ne doit RIEN faire");
-
-console.log(JSON.stringify({ recent, aJour }, null, 2));
-await navigateur.close();
+ }
+}finally{await browser.close();server.close();}

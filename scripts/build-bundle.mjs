@@ -5,7 +5,7 @@
    Produit deux choses :
      bundle-<version>.zip   le client web complet (à téléverser en asset de
                             release : c'est ce que l'app téléchargera)
-     app-bundle.json        { version, url } — l'app lit CE fichier au
+     app-bundle.json        { version, url, checksum } — l'app lit CE fichier au
                             démarrage pour savoir s'il y a plus récent
 
    Le JSON est versionné sur la branche main du dépôt de l'app : le pousser
@@ -15,6 +15,7 @@
    ============================================================ */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,7 +70,7 @@ if (!existsSync(zip)) { console.error("zip non produite : " + zip); process.exit
 const mo = (statSync(zip).size / 1048576).toFixed(1);
 
 const url = `https://github.com/Arthefacte/fractal-arena-mobile/releases/download/v${versionClient}/bundle-${version}.zip`;
-writeFileSync(join(ROOT, "app-bundle.json"), JSON.stringify({ version, url }, null, 2) + "\n", "utf8");
+writeFileSync(join(ROOT, "app-bundle.json"), JSON.stringify({ version, url, checksum: createHash("sha256").update(readFileSync(zip)).digest("hex") }, null, 2) + "\n", "utf8");
 
 console.log("\nPaquet : " + zip + "  (" + mo + " Mo)");
 console.log("app-bundle.json écrit (version " + version + ") → " + url);
