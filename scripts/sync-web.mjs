@@ -504,6 +504,59 @@ async function main() {
     return 0;
   }
 
+  /* Appliquer TOUT DE SUITE le paquet que next() vient de programmer.
+
+     Le fondateur ne veut pas d'un deuxième lancement manuel. Le natif sait le
+     faire : le reload du plugin applique explicitement le paquet en attente
+     (« Applying pending bundle before reload » dans le Java de la 6.51.23) —
+     c'est set() qui recharge sans prévenir, reload() applique ce qui est prêt.
+
+     Trois moments seulement, parce qu'un joueur ne doit jamais voir l'app se
+     relancer en pleine partie : (a) personne n'a encore joué — le splash ou la
+     cinématique est encore à l'écran ; (b) le joueur ne touche plus à rien
+     depuis 8 s ; (c) l'app passe en arrière-plan, où le redémarrage est
+     invisible. Passé 10 minutes sans aucun de ces moments, on rend la main : le
+     paquet reste programmé par next() et s'appliquera au prochain lancement. */
+  function appliquerMaintenant(U, version) {
+    var dernierGeste = Date.now(), fait = false, arret = Date.now() + 600000;
+    var garder = function () { dernierGeste = Date.now(); };
+    ["pointerdown", "keydown", "touchstart", "wheel"].forEach(function (t) {
+      window.addEventListener(t, garder, { passive: true, capture: true });
+    });
+    function relancer(invisible) {
+      if (fait) return;
+      fait = true;
+      if (!invisible) message("Mise à jour " + version + " installée ✓ Redémarrage de l'app…", "#23E27A");
+      setTimeout(function () {
+        try {
+          var p = U.reload();
+          if (p && p.catch) p.catch(function () { /* le paquet reste programmé */ });
+        } catch (e) {
+          // Plugin sans reload (ou refus) : on retombe sur le comportement
+          // historique plutôt que de laisser le joueur sans explication.
+          try { console.warn("MAJ : redémarrage automatique impossible — " + ((e && e.message) || e)); } catch (e2) {}
+          message("Mise à jour prête ✓ Elle s'installera au prochain lancement de l'app.", "#23E27A");
+        }
+      }, invisible ? 0 : 1400);
+    }
+    function encoreAuDemarrage() {
+      return !!document.getElementById("boot") ||
+        !!document.querySelector('[data-screen-label="cinematique-ouverture"]');
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden") relancer(true);
+    });
+    (function essai() {
+      if (fait) return;
+      if (Date.now() > arret) {
+        message("Mise à jour prête ✓ Elle s'installera au prochain lancement de l'app.", "#23E27A");
+        return;
+      }
+      if (encoreAuDemarrage() || Date.now() - dernierGeste > 8000) { relancer(false); return; }
+      setTimeout(essai, 2000);
+    })();
+  }
+
   function verifierMiseAJour(U) {
     fetch(${JSON.stringify(SOURCE_BUNDLE)} + "?t=" + Date.now(), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -525,9 +578,11 @@ async function main() {
             try { if (localStorage.getItem(cle)) return null; localStorage.setItem(cle, "1"); } catch (e) { /* stockage plein */ }
             message("Mise à jour du jeu v" + d.version + " en cours de téléchargement…");
             return U.download({ url: d.url, version: String(d.version), checksum: d.checksum }).then(function (b) {
-              // next programme la bascule ; set rechargerait immédiatement le jeu.
+              // next programme la bascule ; set rechargerait immédiatement le jeu,
+              // en pleine partie et sans prévenir. Une fois next() posé, on
+              // applique tout de suite si le joueur n'est pas en train de jouer.
               return U.next({ id: b.id }).then(function () {
-                message("Mise à jour prête ✓ Elle s'installera au prochain lancement de l'app.", "#23E27A");
+                appliquerMaintenant(U, String(d.version));
               });
             }).catch(function (e) {
               try { localStorage.removeItem(cle); } catch (e2) { /* rien */ }
