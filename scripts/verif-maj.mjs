@@ -31,16 +31,20 @@ try{
  for(const version of ['0',manifest.version,'999999']){
   const page=await browser.newPage({viewport:{width:412,height:915}});
   await page.addInitScript(({expected})=>{
-   window.__update={ready:0,downloads:[],next:[],sets:[],rejected:[]};
+   window.__update={ready:0,downloads:[],next:[],sets:[],rejected:[],reloads:[],ordre:[]};
    window.Capacitor={Plugins:{CapacitorUpdater:{
     notifyAppReady:()=>{window.__update.ready++;return Promise.resolve();},
     download:o=>{
+     window.__update.ordre.push('download');
      window.__update.downloads.push(o);
      if(!o.checksum||o.checksum!==expected.checksum||o.url!==expected.url||o.version!==expected.version){window.__update.rejected.push(o);return Promise.reject(new Error('Native checksum contract violated'));}
      return Promise.resolve({id:'contract-only'});
     },
-    next:o=>{window.__update.next.push(o);return Promise.resolve();},
-    set:o=>{window.__update.sets.push(o);return Promise.reject(new Error('set would interrupt the game'));}
+    next:o=>{window.__update.ordre.push('next');window.__update.next.push(o);return Promise.resolve();},
+    // Le reload du plugin applique le paquet en attente (Java 6.51.23) : c'est
+    // le chemin qu'on veut voir, à la place d'un `set` qui recharge sans prévenir.
+    reload:()=>{window.__update.ordre.push('reload');window.__update.reloads.push({t:Date.now()});return Promise.resolve();},
+    set:o=>{window.__update.ordre.push('set');window.__update.sets.push(o);return Promise.reject(new Error('set would interrupt the game'));}
    }}};
   },{expected:manifest});
   await page.route('**/*',route=>{
@@ -55,12 +59,18 @@ try{
   await page.goto(`http://127.0.0.1:${server.address().port}/`,{waitUntil:'load'});
   const live=await page.evaluate(async m=>{const r=await fetch(m+'?probe='+Date.now(),{cache:'no-store'});return {status:r.status,data:await r.json()};},manifestUrl);
   assert.equal(live.status,200);assert.deepEqual(live.data,manifest);
-  await page.waitForTimeout(8500);
+  await page.waitForTimeout(14000);
   const actual=await page.evaluate(()=>window.__update);
   assert.ok(actual.ready>0);assert.deepEqual(errors,[]);assert.deepEqual(actual.rejected,[]);
   assert.deepEqual(actual.downloads,version==='0'?[manifest]:[]);
   assert.deepEqual(actual.next,version==='0'?[{id:'contract-only'}]:[]);
   assert.deepEqual(actual.sets,[]);
+  // Nouveau : le paquet téléchargé est appliqué TOUT DE SUITE (reload), après
+  // next(), et jamais pour une version égale ou plus ancienne.
+  assert.equal(actual.reloads.length,version==='0'?1:0,
+   'la mise à jour doit s\'appliquer sans deuxième lancement manuel, et seulement quand il y a quelque chose à appliquer');
+  assert.deepEqual(actual.ordre,version==='0'?['download','next','reload']:[],
+   'ordre attendu : télécharger, programmer la bascule, puis appliquer');
   console.log(JSON.stringify({version,source:published?'public manifest':'local manifest',actual,errors}));
   await page.close();
  }
