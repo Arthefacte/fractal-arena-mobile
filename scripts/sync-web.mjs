@@ -516,11 +516,17 @@ async function main() {
             // Jamais de rétrogradation, et une seule tentative par version :
             // un paquet qui échoue ne doit pas retenter à chaque lancement.
             if (comparerVersions(d.version, ici) <= 0) return null;
+            // Le natif exige le SHA-256 du ZIP avant de démarrer le téléchargement.
+            if (typeof d.checksum !== "string" || !/^[a-f0-9]{64}$/.test(d.checksum)) {
+              message("Mise à jour indisponible : empreinte de sécurité absente ou invalide. Le jeu actuel continue de fonctionner.", "#F7931A");
+              return null;
+            }
             var cle = "fa_maj_tentee_" + d.version;
             try { if (localStorage.getItem(cle)) return null; localStorage.setItem(cle, "1"); } catch (e) { /* stockage plein */ }
             message("Mise à jour du jeu v" + d.version + " en cours de téléchargement…");
-            return U.download({ url: d.url, version: String(d.version) }).then(function (b) {
-              return U.set({ id: b.id }).then(function () {
+            return U.download({ url: d.url, version: String(d.version), checksum: d.checksum }).then(function (b) {
+              // next programme la bascule ; set rechargerait immédiatement le jeu.
+              return U.next({ id: b.id }).then(function () {
                 message("Mise à jour prête ✓ Elle s'installera au prochain lancement de l'app.", "#23E27A");
               });
             }).catch(function (e) {

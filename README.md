@@ -89,6 +89,10 @@ gh release upload v<version> dist/bundle-<version>.zip --repo Arthefacte/fractal
   aucune télémétrie tierce. C'est nous qui comparons les versions (l'endpoint du
   plugin se vérifie en POST, ce que GitHub ne sert pas) ; le plugin installe le
   paquet et **revient en arrière** tout seul si le nouveau ne démarre pas.
+- `app-bundle.json` contient `version`, `url` et `checksum` : SHA-256 hexadécimal minuscule des octets du ZIP. `download()` reçoit ces trois champs. Sans checksum, le plugin Android refuse AVANT le réseau avec une erreur générique « Failed to download ».
+- Après le téléchargement, `next({id})` programme la bascule ; `set({id})` rechargerait immédiatement le jeu et ne doit pas être appelé ici.
+- Une APK antérieure à la correction checksum ne peut pas recevoir le correctif par cette voie : installer la nouvelle APK signée PAR-DESSUS, sans désinstaller ni effacer les données.
+- Tests : générer `www/` et le paquet (`npm run bundle`), puis `node --test test/*.test.mjs`, `node scripts/verif-maj.mjs` (manifeste local) et après publication `node scripts/verif-maj.mjs --published` (manifeste public réel). Le faux plugin refuse les appels sans le checksum exact. Le contrat Java réel est testé séparément par `cd android && ./gradlew :app:testDebugUnitTest --tests ee.forgr.capacitor_updater.UpdateContractTest` (Robolectric, aucun téléphone).
 - `notifyAppReady()` est appelé au démarrage : **sans cet acquittement, le plugin
   revient à la version précédente** au lancement suivant.
 - Jamais de rétrogradation, une seule tentative par version, et le client
@@ -121,12 +125,9 @@ gh release create v<version> "FractalArena-android.apk" --repo Arthefacte/fracta
   téléphone est le navigateur intégré d'UniSat (`openDapp`), qui sort de l'app.
   Le compte généré (sans wallet) fonctionne entièrement, c'est le parcours par
   défaut ; la liaison wallet se fait sur la version web.
-- **Chaque mise à jour du jeu = une nouvelle APK.** Le client est embarqué : une
-  correction livrée sur le web n'atteint pas les joueurs de l'app tant qu'une
-  version n'est pas publiée. À trancher : publication fréquente, ou shell qui
-  recharge le client depuis le domaine.
+- Une mise à jour du web seule n'atteint pas l'app : publier aussi le ZIP et son manifeste. Une APK neuve reste nécessaire si le natif change ou si la chaîne de mise à jour embarquée est cassée.
 - **APK de debug** : signée par la clé de debug, installable par sideload. Une
-  mise en ligne Play demande une clé de release (à créer et conserver), un AAB,
+  mise en ligne Play demande la clé de release existante (à conserver), un AAB,
   et un `targetSdk` à jour (Play exige plus récent que le 34 actuel).
 - **Contenu magasin** : cf. `AUDIT-CONFORMITE-APPLE-2026-08-17.md` du dossier —
   dépôt, retrait, liens InSwap, poussière de FB et lexique « gains/sats » sont à
