@@ -66,6 +66,7 @@ def main():
     ap.add_argument("--sonde", required=True)
     ap.add_argument("--seuil", type=float, default=1.0, help="écart mini pour compter une image comme « changée »")
     ap.add_argument("--tout", action="store_true", help="analyser la fenêtre entière, pas seulement les blocages")
+    ap.add_argument("--fin", type=float, default=None, help="fin de fenêtre en ms (défaut : retrait du splash)")
     a = ap.parse_args()
 
     d = json.load(open(a.sonde, encoding="utf-8"))
@@ -90,7 +91,7 @@ def main():
         # gels ? Un comptage global ne dépend pas de l'alignement de phase : si
         # l'animation tourne, l'assemblage (1,5 s par cycle de 4,1 s) produit ~31
         # changements par cycle.
-        t0, t1 = 0, d["rapport"]["jalons"].get("splashRetire", 1e9)
+        t0, t1 = 0, (a.fin if a.fin else d["rapport"]["jalons"].get("splashRetire", 1e9))
         sel = [(tn, p) for (tn, p) in imgs if t0 <= tn - decalage <= t1]
         ecarts, err = diff_successives([p for _, p in sel], (x, y, w, h))
         if err:

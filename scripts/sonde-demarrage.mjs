@@ -31,6 +31,8 @@ const MSG = arg("attendre", "supprime"); // « supprime » = jusqu'au retrait du
 const CAPTURE = arg("capture", "oui") === "oui";
 const IMAGES = arg("images", ""); // répertoire où garder les images réellement affichées
 if (IMAGES) mkdirSync(IMAGES, { recursive: true });
+const DUREE = Number(arg("duree", 0)); // secondes de plus à observer APRÈS le retrait du splash
+const URL_CIBLE = arg("url", ""); // chemin à charger (ex. « /?cine=bake ») pour comparer deux variantes
 
 const navigateur = await chromium.launch({ headless: true });
 const page = await navigateur.newPage({
@@ -136,7 +138,7 @@ page.on("pageerror", (e) => erreurs.push(String(e.message).slice(0, 200)));
 page.on("console", (m) => { if (m.type() === "error") erreurs.push("console: " + m.text().slice(0, 200)); });
 
 const depart = Date.now();
-await page.goto(`http://localhost:${PORT}/`, { waitUntil: "load", timeout: 90000 });
+await page.goto(`http://localhost:${PORT}${URL_CIBLE || "/"}`, { waitUntil: "load", timeout: 90000 });
 
 // Attendre l'événement demandé, sinon 25 s.
 const limite = MSG === "supprime" ? "splashRetire" : MSG;
@@ -147,6 +149,7 @@ try {
     { timeout: 25000, polling: 50 },
   );
 } catch (e) { /* on mesure quand même ce qu'on a */ }
+if (DUREE) await page.waitForTimeout(DUREE * 1000);
 await page.waitForTimeout(600);
 
 const donnees = await page.evaluate(() => {
@@ -218,6 +221,16 @@ const rapport = {
       .map((x) => `${x.d}ms @${Math.round(x.t)}ms`),
   },
   blocages,
+  profilTaches: (() => {
+    const out = [];
+    for (let t0 = 0; t0 < donnees.duree; t0 += 2500) {
+      const dans = donnees.taches.filter((t) => t.t >= t0 && t.t < t0 + 2500);
+      out.push(dans.length
+        ? `${(t0 / 1000).toFixed(1)}s : ${dans.length} tâche(s), ${Math.round(dans.reduce((a, t) => a + t.d, 0))} ms au total, pire ${Math.round(Math.max(...dans.map((t) => t.d)))} ms`
+        : `${(t0 / 1000).toFixed(1)}s : —`);
+    }
+    return out;
+  })(),
   images: {
     total: ei.length + 1,
     ecartMs: stats(ei),
