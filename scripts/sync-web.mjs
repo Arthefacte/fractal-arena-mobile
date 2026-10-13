@@ -69,7 +69,7 @@ const REQUIS = [
   "index.html", "data.js", "i18n.js", "account-ui.js", "device-link-ui.js",
   "styles.css", "mobile.css", "asset-hashes.js",
   "build/app.js", "build/screens.js", "build/components.js",
-  "assets/emblem.glb", "assets/favicon.png", "assets/boot-anim.js",
+  "assets/emblem.glb", "assets/favicon.png", "assets/boot-strip.webp",
   "vendor/three-0.160.0/three.module.js", "vendor/qrcode-generator/qrcode.js",
 ];
 
