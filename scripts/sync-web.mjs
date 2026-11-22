@@ -35,8 +35,8 @@
    ============================================================ */
 
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -101,12 +101,38 @@ function echapper(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function sha384b64(buf) { return createHash("sha384").update(buf).digest("base64"); }
 function sha256b64(buf) { return createHash("sha256").update(buf).digest("base64"); }
 
-function parcourir(dir, out = []) {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) parcourir(p, out); else out.push(p);
+function dansRacine(racine, cible) {
+  const rel = relative(racine, cible);
+  return rel === "" || (rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel));
+}
+
+function racineCanonique(dir, etiquette) {
+  const info = lstatSync(dir);
+  if (info.isSymbolicLink()) echouer(etiquette + " est un lien symbolique : " + dir);
+  if (!info.isDirectory()) echouer(etiquette + " n'est pas un dossier : " + dir);
+  return realpathSync(dir);
+}
+
+function verifierEntree(racine, p, etiquette, fichiers = null) {
+  const rel = relative(racine, p) || ".";
+  const info = lstatSync(p);
+  if (info.isSymbolicLink()) echouer(etiquette + " contient un lien symbolique : " + rel);
+  if (!info.isDirectory() && !info.isFile()) echouer(etiquette + " contient une entrée non régulière : " + rel);
+  const reel = realpathSync(p);
+  if (!dansRacine(racine, reel)) echouer(etiquette + " sort de sa racine : " + rel);
+
+  if (info.isDirectory()) {
+    for (const nom of readdirSync(p)) verifierEntree(racine, join(p, nom), etiquette, fichiers);
+  } else if (fichiers) {
+    fichiers.push(p);
   }
-  return out;
+}
+
+function parcourir(dir) {
+  const racine = racineCanonique(dir, "arbre à parcourir");
+  const fichiers = [];
+  for (const nom of readdirSync(dir)) verifierEntree(racine, join(dir, nom), "arbre à parcourir", fichiers);
+  return fichiers;
 }
 
 function taille(dir) {
@@ -117,6 +143,7 @@ function taille(dir) {
 
 async function main() {
   if (!existsSync(WEB)) echouer("client web introuvable : " + WEB);
+  const racineWeb = racineCanonique(WEB, "client web");
 
   // ---- 1. Copie -------------------------------------------------------
   if (existsSync(WWW)) rmSync(WWW, { recursive: true, force: true });
@@ -127,11 +154,16 @@ async function main() {
     if (EXCLUS.has(nom)) continue;
     if (nom.startsWith("_")) continue;        // protos HTML de chantier
     if (/\.(md|py)$/i.test(nom)) continue;
-    cpSync(join(WEB, nom), join(WWW, nom), { recursive: true });
+    const source = join(WEB, nom);
+    verifierEntree(racineWeb, source, "client web");
+    cpSync(source, join(WWW, nom), { recursive: true });
     copies++;
   }
   if (copies < 20) echouer("copie suspicieusement petite (" + copies + " entrées) : source incomplète ?");
 
+  // Deuxième barrière : une substitution pendant la copie, ou un cp qui
+  // préserverait un lien, ne doit jamais être lue par les transformations.
+  parcourir(WWW);
   for (const f of REQUIS) if (!existsSync(join(WWW, f))) echouer("fichier requis absent après copie : " + f);
 
   // ---- 2. index.html : service worker retiré, React local, override API --
