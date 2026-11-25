@@ -5,7 +5,7 @@
   "type": "module",
   "description": "App Android native de Fractal Arena (Capacitor) - www/ genere depuis le client web",
   "scripts": {
-    "build:web": "node scripts/sync-web.mjs",
+    "build:web": "node scripts/sync-web.mjs --dev",
     "icones": "node scripts/app-icons.mjs",
     "sync": "npm run build:web && cap sync android",
     "apk": "npm run sync && cd android && ./gradlew assembleDebug",

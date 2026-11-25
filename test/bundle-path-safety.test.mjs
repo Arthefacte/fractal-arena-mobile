@@ -36,7 +36,7 @@ test("sync-web refuse un lien symbolique de la source", (t) => {
     writeFileSync(secret, "secret de signature");
     if (!lienOuIgnorer(t, secret, join(web, "fuite.txt"))) return;
 
-    const r = spawnSync(process.execPath, [SYNC], {
+    const r = spawnSync(process.execPath, [SYNC, "--dev"], {
       env: { ...process.env, FA_WEB_DIR: web },
       encoding: "utf8",
     });

@@ -16,9 +16,12 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ecrireProvenance, verifierProvenance } from "./web-provenance.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ANDROID = join(ROOT, "android");
+const WWW = join(ROOT, "www");
+const ASSETS_ANDROID = join(ANDROID, "app", "src", "main", "assets", "public");
 const SORTIE = join(ANDROID, "app", "build", "outputs", "apk", "release", "app-release.apk");
 const LIVRE = join(ROOT, "FractalArena-android.apk");
 
@@ -27,27 +30,35 @@ function node(args) {
   execFileSync(process.execPath, args, { cwd: ROOT, stdio: ["ignore", "inherit", "inherit"] });
 }
 
-// Le build régénère www/ LUI-MÊME : c'est ce qui empêche de livrer une APK
-// construite sur un www/ périmé ou sur des octets qui ne sont pas ceux du site
-// (les empreintes SRI de React et le hash CSP sont vérifiés par sync-web.mjs,
-// qui ÉCHOUE plutôt que d'embarquer autre chose).
+// Le build régénère www/ LUI-MÊME depuis FA_WEB_COMMIT. sync-web exige un
+// dépôt propre au bon HEAD, puis lit les blobs du commit dans un snapshot
+// isolé : le clone partagé vivant n'entre jamais dans la livraison.
 node(["scripts/sync-web.mjs"]);
+let provenance = verifierProvenance(WWW);
 
 // L'APK embarque exactement le paquet publié : s'il existe un paquet pour la même
 // version de client (335.1 après une correction de l'app), on étiquette l'APK avec
 // cette version — sinon une installation neuve retéléchargerait 40 Mo pour rien.
 try {
   const paquet = JSON.parse(readFileSync(join(ROOT, "app-bundle.json"), "utf8"));
-  const client = (readFileSync(join(ROOT, "www", "index.html"), "utf8").match(/data\.js\?v=(\d+)/) || [])[1];
-  if (client && String(paquet.version).split(".")[0] === String(client)) {
-    const p = join(ROOT, "www", "app-env.json");
+  const client = (readFileSync(join(WWW, "index.html"), "utf8").match(/data\.js\?v=(\d+)/) || [])[1];
+  const memeSource = paquet.webCommit === provenance.webCommit && paquet.webTree === provenance.webTree;
+  if (client && memeSource && String(paquet.version).split(".")[0] === String(client)) {
+    const p = join(WWW, "app-env.json");
     const env = JSON.parse(readFileSync(p, "utf8"));
     writeFileSync(p, JSON.stringify({ ...env, versionWeb: paquet.version }, null, 2) + "\n", "utf8");
     console.log("app-env.json étiqueté " + paquet.version + " (mêmes octets que le paquet publié)");
   }
 } catch (e) { /* aucun paquet publié : l'APK garde la version du client */ }
 
+// La seule mutation légitime après sync-web est l'étiquette de version ci-dessus.
+// On recalcule son reçu, puis on refuse toute autre divergence avant et après
+// la copie Capacitor vers les assets Android.
+provenance = ecrireProvenance(WWW, provenance);
+verifierProvenance(WWW);
+
 node([join("node_modules", "@capacitor", "cli", "bin", "capacitor"), "sync", "android"]);
+verifierProvenance(ASSETS_ANDROID);
 
 console.log("\nBuild release (clé de ~/.fa-secrets/android/)…");
 const args = [":app:assembleRelease", "--console=plain"];
