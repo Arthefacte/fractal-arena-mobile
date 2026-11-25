@@ -95,6 +95,7 @@ const TEXTES = new Set([".html", ".js", ".jsx", ".css", ".webmanifest", ".json"]
 // Fichiers dont on normalise les fins de ligne (le site sert des LF ; un checkout
 // Windows peut avoir réécrit le fichier en CRLF — cf. l'étape 2 bis).
 const NORMALISABLES = new Set([".html", ".js", ".jsx", ".css", ".json", ".webmanifest", ".txt", ".svg"]);
+const BASE_SRI_LOCALE = new URL("https://sri.invalid/__racine_www__/");
 
 function echouer(msg) { console.error("\nÉCHEC — " + msg + "\n"); process.exit(1); }
 function echapper(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
@@ -104,6 +105,61 @@ function sha256b64(buf) { return createHash("sha256").update(buf).digest("base64
 function dansRacine(racine, cible) {
   const rel = relative(racine, cible);
   return rel === "" || (rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel));
+}
+
+function refuserSourceSri(src, raison) {
+  throw new Error("source SRI locale non sûre (" + raison + ") : " + src);
+}
+
+export function resoudreRessourceSri(racine, src) {
+  const protocole = src.match(/^([A-Za-z][A-Za-z\d+.-]*):/);
+  if (protocole) {
+    if (/^https?$/i.test(protocole[1])) return null;
+    refuserSourceSri(src, "protocole non autorisé");
+  }
+  if (src.startsWith("//")) refuserSourceSri(src, "URL absolue");
+  if (/[\\\u0000-\u001f\u007f]/.test(src)) refuserSourceSri(src, "barre oblique inverse ou caractère de contrôle");
+
+  let url;
+  try {
+    url = new URL(src, BASE_SRI_LOCALE);
+  } catch {
+    refuserSourceSri(src, "URL invalide");
+  }
+  if (url.origin !== BASE_SRI_LOCALE.origin) refuserSourceSri(src, "URL absolue");
+  if (url.hash) refuserSourceSri(src, "fragment interdit");
+
+  const finChemin = src.search(/[?#]/);
+  const cheminBrut = finChemin === -1 ? src : src.slice(0, finChemin);
+  let cheminDecode;
+  try {
+    cheminDecode = decodeURIComponent(cheminBrut);
+  } catch {
+    refuserSourceSri(src, "encodage invalide");
+  }
+  if (/[\\\u0000-\u001f\u007f]/.test(cheminDecode)) refuserSourceSri(src, "barre oblique inverse ou caractère de contrôle");
+  if (cheminDecode.startsWith("/") || isAbsolute(cheminDecode) || /^[A-Za-z]:/.test(cheminDecode)) {
+    refuserSourceSri(src, "chemin absolu");
+  }
+  if (cheminDecode.split("/").includes("..")) refuserSourceSri(src, "traversée de répertoire");
+  if (!url.pathname.startsWith(BASE_SRI_LOCALE.pathname)) refuserSourceSri(src, "sortie de la racine");
+
+  let chemin;
+  try {
+    chemin = decodeURIComponent(url.pathname.slice(BASE_SRI_LOCALE.pathname.length));
+  } catch {
+    refuserSourceSri(src, "encodage invalide");
+  }
+  const candidat = resolve(racine, chemin);
+  if (!dansRacine(racine, candidat)) refuserSourceSri(src, "sortie de la racine");
+
+  const info = lstatSync(candidat, { throwIfNoEntry: false });
+  if (info === undefined) throw new Error("ressource SRI absente de la copie : " + chemin);
+  if (info.isSymbolicLink()) refuserSourceSri(src, "lien symbolique interdit");
+  if (!info.isFile()) refuserSourceSri(src, "fichier non régulier");
+  const reel = realpathSync(candidat);
+  if (!dansRacine(racine, reel)) refuserSourceSri(src, "sortie de la racine canonique");
+  return { chemin, abs: reel };
 }
 
 function racineCanonique(dir, etiquette) {
@@ -680,17 +736,17 @@ async function main() {
   if (normalises.length) console.log("  fins de ligne normalisées en LF : " + normalises.length + " fichier(s)");
 
   const htmlFinal = readFileSync(fichierIndex, "utf8");
+  const racineWww = racineCanonique(WWW, "copie web");
   for (const balise of htmlFinal.match(/<script[^>]*>/g) || []) {
     const src = (balise.match(/src="([^"]+)"/) || [])[1];
     const integ = (balise.match(/integrity="sha384-([^"]+)"/) || [])[1];
-    if (!src || !integ || /^https?:/.test(src)) continue;
-    const chemin = src.split("?")[0];
-    const abs = join(WWW, chemin);
-    if (!existsSync(abs)) echouer("ressource SRI absente de la copie : " + chemin);
-    const h = sha384b64(readFileSync(abs));
+    if (!src || !integ) continue;
+    const ressource = resoudreRessourceSri(racineWww, src);
+    if (!ressource) continue;
+    const h = sha384b64(readFileSync(ressource.abs));
     if (h !== integ) {
       echouer("SRI NON CONFORME — l'APK n'embarquerait pas les octets du site :\n"
-        + "  " + chemin + "\n  attendu sha384-" + integ + "\n  obtenu  sha384-" + h);
+        + "  " + ressource.chemin + "\n  attendu sha384-" + integ + "\n  obtenu  sha384-" + h);
     }
   }
 
@@ -729,4 +785,6 @@ async function main() {
   console.log("  écarts : override API + navigator.standalone, service worker retiré");
 }
 
-main().catch((e) => echouer(e.message));
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e) => echouer(e.message));
+}

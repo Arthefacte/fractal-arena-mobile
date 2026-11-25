@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { resoudreRessourceSri } from "../scripts/sync-web.mjs";
 
 const RACINE = resolve(import.meta.dirname, "..");
 const SYNC = join(RACINE, "scripts", "sync-web.mjs");
@@ -42,6 +43,66 @@ test("sync-web refuse un lien symbolique de la source", (t) => {
     });
     assert.notEqual(r.status, 0);
     assert.match(r.stdout + r.stderr, /client web contient un lien symbolique : fuite\.txt/);
+  } finally {
+    rmSync(bac, { recursive: true, force: true });
+  }
+});
+
+test("sync-web borne les chemins des scripts SRI à www", () => {
+  const bac = bacASable();
+  try {
+    const www = join(bac, "www");
+    const script = join(www, "build", "app.js");
+    mkdirSync(dirname(script), { recursive: true });
+    writeFileSync(script, "console.log('jeu');");
+    const racineWww = realpathSync(www);
+
+    for (const src of [
+      "../secret.js",
+      "%2e%2e/secret.js",
+      "/etc/passwd",
+      "%2fetc/passwd",
+      "C:/secret.js",
+      "..\\secret.js",
+      "//serveur/secret.js",
+      "file:///secret.js",
+      "javascript:alert(1)",
+      "build/app.js#fragment",
+    ]) {
+      assert.throws(() => resoudreRessourceSri(racineWww, src), /source SRI locale non sûre/,
+        `la source dangereuse doit être refusée : ${src}`);
+    }
+
+    assert.equal(resoudreRessourceSri(racineWww, "https://cdn.example/app.js"), null,
+      "les scripts HTTPS externes restent hors de la vérification des fichiers locaux");
+    assert.deepEqual(resoudreRessourceSri(racineWww, "build/app.js?v=42"), {
+      chemin: "build/app.js",
+      abs: realpathSync(script),
+    }, "un script régulier sous www avec cache-bust doit rester accepté");
+  } finally {
+    rmSync(bac, { recursive: true, force: true });
+  }
+});
+
+test("sync-web refuse les cibles SRI non régulières", (t) => {
+  const bac = bacASable();
+  try {
+    const www = join(bac, "www");
+    const externe = join(bac, "secret.js");
+    const dossierExterne = join(bac, "prive");
+    mkdirSync(join(www, "build"), { recursive: true });
+    mkdirSync(dossierExterne);
+    writeFileSync(externe, "secret");
+    writeFileSync(join(dossierExterne, "secret.js"), "secret imbriqué");
+    const racineWww = realpathSync(www);
+    assert.throws(() => resoudreRessourceSri(racineWww, "build"), /fichier non régulier/,
+      "un dossier ne doit jamais atteindre la lecture SRI");
+    if (!lienOuIgnorer(t, externe, join(www, "build", "lien.js"))) return;
+    assert.throws(() => resoudreRessourceSri(racineWww, "build/lien.js"), /lien symbolique interdit/,
+      "un lien symbolique ne doit jamais atteindre la lecture SRI");
+    if (!lienOuIgnorer(t, dossierExterne, join(www, "prive"), "dir")) return;
+    assert.throws(() => resoudreRessourceSri(racineWww, "prive/secret.js"), /sortie de la racine canonique/,
+      "un dossier lié hors de www ne doit jamais atteindre la lecture SRI");
   } finally {
     rmSync(bac, { recursive: true, force: true });
   }
