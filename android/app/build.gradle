@@ -1,3 +1,8 @@
+import groovy.io.FileType
+import groovy.json.JsonSlurper
+import java.nio.file.Files
+import java.security.MessageDigest
+
 apply plugin: 'com.android.application'
 
 // Clé de signature release : HORS du dépôt (~/.fa-secrets/android/), jamais
@@ -42,6 +47,70 @@ android {
             if (aCle) { signingConfig signingConfigs.release }
         }
     }
+}
+
+// Une tâche Gradle lancée directement ne doit pas contourner le contrôle des
+// scripts Node. Le reçu copié avec les assets lie chaque octet à FA_WEB_COMMIT ;
+// un `cap sync` de développement ne produit volontairement aucun reçu.
+def depotWebAttendu = 'github.com/Arthefacte/fractal-arena-web'
+def nomProvenanceWeb = 'release-provenance.json'
+def empreinteAssetsWeb = { File racine ->
+    def fichiers = []
+    racine.eachFileRecurse(FileType.ANY) { f ->
+        def rel = racine.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
+        if (Files.isSymbolicLink(f.toPath())) {
+            throw new GradleException("Assets web non sûrs : lien symbolique interdit : " + rel)
+        }
+        if (f.isFile() && rel != nomProvenanceWeb) fichiers << [chemin: rel, fichier: f]
+        else if (!f.isFile() && !f.isDirectory()) {
+            throw new GradleException("Assets web non sûrs : entrée non régulière : " + rel)
+        }
+    }
+    fichiers.sort { a, b -> a.chemin <=> b.chemin }
+    def digest = MessageDigest.getInstance('SHA-256')
+    fichiers.each { entree ->
+        byte[] contenu = entree.fichier.bytes
+        digest.update(entree.chemin.getBytes('UTF-8'))
+        digest.update((byte) 0)
+        digest.update(String.valueOf(contenu.length).getBytes('UTF-8'))
+        digest.update((byte) 0)
+        digest.update(contenu)
+        digest.update((byte) 0)
+    }
+    return digest.digest().encodeHex().toString()
+}
+
+def verificationProvenanceRelease = tasks.register('verifyReleaseWebProvenance') {
+    group = 'verification'
+    description = 'Refuse une release Android qui ne provient pas du commit web approuvé.'
+    doLast {
+        def commitApprouve = (System.getenv('FA_WEB_COMMIT') ?: '').toLowerCase(Locale.ROOT)
+        if (!(commitApprouve ==~ /[0-9a-f]{40}/)) {
+            throw new GradleException('FA_WEB_COMMIT doit contenir le SHA-1 complet du client web approuvé')
+        }
+        def racine = file('src/main/assets/public')
+        def recu = new File(racine, nomProvenanceWeb)
+        if (!racine.isDirectory() || !recu.isFile() || Files.isSymbolicLink(recu.toPath())) {
+            throw new GradleException('Reçu de provenance web absent : exécuter scripts/build-release.mjs')
+        }
+        def provenance
+        try { provenance = new JsonSlurper().parse(recu) }
+        catch (Exception e) { throw new GradleException('Reçu de provenance web illisible', e) }
+        if (provenance.schemaVersion != 1 || provenance.repository != depotWebAttendu) {
+            throw new GradleException('Dépôt web inattendu dans le reçu de provenance')
+        }
+        if (provenance.webCommit != commitApprouve || !(provenance.webTree ==~ /[0-9a-f]{40}/)) {
+            throw new GradleException('Les assets Android ne correspondent pas au commit web approuvé')
+        }
+        if (!(provenance.generatedTreeSha256 ==~ /[0-9a-f]{64}/)
+                || empreinteAssetsWeb(racine) != provenance.generatedTreeSha256) {
+            throw new GradleException('Les assets Android ont changé depuis la génération approuvée')
+        }
+    }
+}
+
+tasks.configureEach { t ->
+    if (t.name == 'preReleaseBuild') t.dependsOn(verificationProvenanceRelease)
 }
 
 tasks.whenTaskAdded { t ->

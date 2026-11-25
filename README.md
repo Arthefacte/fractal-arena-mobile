@@ -7,10 +7,12 @@ service worker. Android uniquement (iOS se compile sur macOS, pas ici).
 ## Ce que fait ce dépôt
 
 Le client est celui du dépôt **fractal-arena-web** — une seule source de vérité.
-`www/` est **généré**, jamais édité à la main. La source est le clone voisin par
-défaut, ou un worktree pinné sur `origin/main` via `FA_WEB_DIR` : **on ne livre
-jamais depuis le clone partagé**, qui porte le travail non commité des autres
-sessions.
+`www/` est **généré**, jamais édité à la main. Les builds de développement
+peuvent lire le clone voisin, qui porte le travail non commité des autres
+sessions. Une livraison exige au contraire `FA_WEB_DIR` et le SHA complet
+`FA_WEB_COMMIT` d'un commit approuvé : le dépôt, son remote `origin`, `HEAD` et
+sa propreté sont contrôlés, puis les blobs Git sont copiés dans un snapshot
+isolé. Aucun octet n'est livré depuis le worktree vivant.
 
 ```bash
 npm install          # une fois
@@ -18,8 +20,8 @@ npm run icones       # icônes + écran de lancement (seulement si l'emblème ch
 npm run apk          # génère www/, synchronise Capacitor, compile l'APK
 # → android/app/build/outputs/apk/debug/app-debug.apk
 
-# Depuis une version précise du client (worktree pinné) :
-FA_WEB_DIR=".../wt-app-web" npm run apk
+# Livraison depuis un commit précis du client (40 caractères, choisi après revue) :
+FA_WEB_DIR=".../wt-app-web" FA_WEB_COMMIT="0123456789abcdef0123456789abcdef01234567" npm run apk:release
 ```
 
 Le `versionCode` de l'APK et son `versionName` sont **écrits par le build à
@@ -80,7 +82,8 @@ arrière-plan** et l'installe **au lancement suivant** : ni coupure de partie, n
 attente de 40 Mo devant l'écran de démarrage.
 
 ```bash
-npm run bundle        # produit dist/bundle-<version>.zip + app-bundle.json
+FA_WEB_DIR=".../wt-app-web" FA_WEB_COMMIT="<sha-complet-approuvé>" npm run bundle
+# produit dist/bundle-<version>.zip + app-bundle.json
 gh release upload v<version> dist/bundle-<version>.zip --repo Arthefacte/fractal-arena-mobile
 # puis committer + pousser app-bundle.json sur main : c'est CE fichier qui annonce la mise à jour
 ```
@@ -89,7 +92,10 @@ gh release upload v<version> dist/bundle-<version>.zip --repo Arthefacte/fractal
   aucune télémétrie tierce. C'est nous qui comparons les versions (l'endpoint du
   plugin se vérifie en POST, ce que GitHub ne sert pas) ; le plugin installe le
   paquet et **revient en arrière** tout seul si le nouveau ne démarre pas.
-- `app-bundle.json` contient `version`, `url` et `checksum` : SHA-256 hexadécimal minuscule des octets du ZIP. `download()` reçoit ces trois champs. Sans checksum, le plugin Android refuse AVANT le réseau avec une erreur générique « Failed to download ».
+- `app-bundle.json` contient `version`, `url`, `checksum`, `webCommit` et
+  `webTree` : le SHA-256 minuscule du ZIP et l'identité exacte de sa source Git.
+  `download()` reçoit les trois premiers champs. Sans checksum, le plugin Android
+  refuse AVANT le réseau avec une erreur générique « Failed to download ».
 - Après le téléchargement, `next({id})` programme la bascule ; `set({id})` rechargerait immédiatement le jeu et ne doit pas être appelé ici.
 - Une APK antérieure à la correction checksum ne peut pas recevoir le correctif par cette voie : installer la nouvelle APK signée PAR-DESSUS, sans désinstaller ni effacer les données.
 - Tests : générer `www/` et le paquet (`npm run bundle`), puis `node --test test/*.test.mjs`, `node scripts/verif-maj.mjs` (manifeste local) et après publication `node scripts/verif-maj.mjs --published` (manifeste public réel). Le faux plugin refuse les appels sans le checksum exact. Le contrat Java réel est testé séparément par `cd android && ./gradlew :app:testDebugUnitTest --tests ee.forgr.capacitor_updater.UpdateContractTest` (Robolectric, aucun téléphone).
@@ -106,9 +112,17 @@ gh release upload v<version> dist/bundle-<version>.zip --repo Arthefacte/fractal
 ## Publier une version téléchargeable
 
 ```bash
-npm run apk:release     # build SIGNÉ (clé de release) → FractalArena-android.apk
+FA_WEB_DIR=".../wt-app-web" FA_WEB_COMMIT="<sha-complet-approuvé>" npm run apk:release
+# build SIGNÉ (clé de release) → FractalArena-android.apk
 gh release create v<version> "FractalArena-android.apk" --repo Arthefacte/fractal-arena-mobile
 ```
+
+- Le worktree doit être propre, sans fichier suivi modifié ni fichier non suivi,
+  et son `origin` doit être `github.com/Arthefacte/fractal-arena-web`.
+- `www/release-provenance.json` enregistre le commit, l'arbre Git et le SHA-256
+  de tous les fichiers générés. Le bundle, la copie Capacitor et la tâche Gradle
+  `preReleaseBuild` revérifient ce reçu ; `npm run apk` n'en crée pas et ne peut
+  donc pas être signé accidentellement comme une release.
 
 - La clé de signature vit **hors du dépôt** : `~/.fa-secrets/android/` (`.jks` +
   `keystore.properties`), créée une fois par `node scripts/creer-cle-release.mjs`.

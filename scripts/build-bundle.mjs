@@ -19,15 +19,27 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ecrireProvenance, verifierProvenance } from "./web-provenance.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WWW = join(ROOT, "www");
 const DIST = join(ROOT, "dist");
 
+function node(args) {
+  console.log("\n$ node " + args.join(" "));
+  execFileSync(process.execPath, args, { cwd: ROOT, stdio: ["ignore", "inherit", "inherit"] });
+}
+
+// Un paquet est une livraison au même titre qu'une APK signée : il régénère
+// donc toujours www/ depuis le commit approuvé, jamais depuis un arbre ignoré
+// préexistant ou depuis le clone voisin mutable.
+node(["scripts/sync-web.mjs"]);
+
 if (!existsSync(join(WWW, "index.html"))) {
-  console.error("www/ absent : lancer d'abord `node scripts/sync-web.mjs`");
+  console.error("www/ absent après la génération approuvée");
   process.exit(1);
 }
+let provenance = verifierProvenance(WWW);
 
 const html = readFileSync(join(WWW, "index.html"), "utf8");
 const versionClient = (html.match(/data\.js\?v=(\d+)/) || [])[1];
@@ -59,18 +71,27 @@ const zip = join(DIST, `bundle-${version}.zip`);
 // version précédente et retéléchargerait le même paquet.
 const env = JSON.parse(readFileSync(join(WWW, "app-env.json"), "utf8"));
 writeFileSync(join(WWW, "app-env.json"), JSON.stringify({ ...env, versionWeb: version, versionClient }, null, 2) + "\n", "utf8");
+provenance = ecrireProvenance(WWW, provenance);
+verifierProvenance(WWW);
 
 // Le zip est produit par scripts/zip-bundle.py : ni zip/7z sur le poste, et
 // PowerShell n'a pas pu être lancé depuis Node. La bibliothèque standard de
 // Python est présente et l'archive est vérifiable (testzip) après coup.
 console.log("Compression de www/ (v" + version + ")…");
 execFileSync("python", [join(ROOT, "scripts", "zip-bundle.py"), WWW, zip], { stdio: ["ignore", "inherit", "inherit"] });
+verifierProvenance(WWW);
 
 if (!existsSync(zip)) { console.error("zip non produite : " + zip); process.exit(1); }
 const mo = (statSync(zip).size / 1048576).toFixed(1);
 
 const url = `https://github.com/Arthefacte/fractal-arena-mobile/releases/download/v${versionClient}/bundle-${version}.zip`;
-writeFileSync(join(ROOT, "app-bundle.json"), JSON.stringify({ version, url, checksum: createHash("sha256").update(readFileSync(zip)).digest("hex") }, null, 2) + "\n", "utf8");
+writeFileSync(join(ROOT, "app-bundle.json"), JSON.stringify({
+  version,
+  url,
+  checksum: createHash("sha256").update(readFileSync(zip)).digest("hex"),
+  webCommit: provenance.webCommit,
+  webTree: provenance.webTree,
+}, null, 2) + "\n", "utf8");
 
 console.log("\nPaquet : " + zip + "  (" + mo + " Mo)");
 console.log("app-bundle.json écrit (version " + version + ") → " + url);

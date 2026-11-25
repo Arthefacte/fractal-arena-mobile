@@ -38,13 +38,18 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  FICHIER_PROVENANCE,
+  ecrireProvenance,
+  materialiserClientWebApprouve,
+} from "./web-provenance.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// Source du client : par défaut le clone voisin, mais on peut pointer un
-// WORKTREE pinné sur origin/main (FA_WEB_DIR=...). C'est la règle du studio :
-// le clone partagé porte le travail non commité des autres sessions, on ne
-// livre jamais depuis lui.
-const WEB = process.env.FA_WEB_DIR ? resolve(process.env.FA_WEB_DIR) : resolve(ROOT, "..", "fractal-arena-web");
+let WEB;
+let DESCRIPTION_SOURCE;
+let PROVENANCE_SOURCE = null;
+let nettoyerSource = null;
+process.once("exit", () => { if (nettoyerSource) nettoyerSource(); });
 const WWW = resolve(ROOT, "www");
 const API_PROD = "https://fractal-arena-server-production.up.railway.app";
 // Où l'app lit la dernière version publiée du JEU (le client, pas l'APK).
@@ -61,6 +66,7 @@ const EXCLUS = new Set([
   "sw.js", "sw-register.js", "sw-policy.js",
   "package.json", "package-lock.json", "README.md", ".gitignore",
   ".gitattributes", ".nojekyll",
+  FICHIER_PROVENANCE,
   "serve_unity.py",
 ]);
 
@@ -142,6 +148,26 @@ function taille(dir) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+  const modeDeveloppement = args.length === 1 && args[0] === "--dev";
+  if (args.length && !modeDeveloppement) echouer("argument inconnu : " + args.join(" "));
+
+  if (modeDeveloppement) {
+    // Le clone voisin mutable reste pratique pour une APK de debug. Le reçu de
+    // provenance est volontairement absent : Gradle refusera de signer cet arbre.
+    WEB = process.env.FA_WEB_DIR ? resolve(process.env.FA_WEB_DIR) : resolve(ROOT, "..", "fractal-arena-web");
+    DESCRIPTION_SOURCE = WEB + " (développement, non livrable)";
+  } else {
+    // Une livraison ne lit jamais le worktree vivant. Git fournit les blobs du
+    // commit explicitement approuvé dans un snapshot isolé, après contrôle du
+    // dépôt, de HEAD et de l'absence de modifications suivies ou non suivies.
+    const approuve = materialiserClientWebApprouve();
+    WEB = approuve.repertoire;
+    PROVENANCE_SOURCE = approuve.provenance;
+    nettoyerSource = approuve.nettoyer;
+    DESCRIPTION_SOURCE = PROVENANCE_SOURCE.repository + "@" + PROVENANCE_SOURCE.webCommit;
+  }
+
   if (!existsSync(WEB)) echouer("client web introuvable : " + WEB);
   const racineWeb = racineCanonique(WEB, "client web");
 
@@ -721,12 +747,21 @@ async function main() {
     echouer("la CSP n'autorise pas " + hoteManifeste + " : l'app ne pourrait lire aucune mise à jour");
   }
 
+  // Ce reçu lie le commit et l'arbre Git approuvés aux octets réellement
+  // générés. Les commandes de livraison et Gradle le revérifient avant leurs
+  // sinks respectifs ; le mode --dev n'en produit jamais.
+  if (PROVENANCE_SOURCE) ecrireProvenance(WWW, PROVENANCE_SOURCE);
+
   const mo = (taille(WWW) / 1048576).toFixed(1);
-  console.log("www/ généré depuis " + WEB);
+  console.log("www/ généré depuis " + DESCRIPTION_SOURCE);
   console.log("  client web v" + version + " → " + mo + " Mo, " + parcourir(WWW).length + " fichiers");
   console.log("  API    : " + API_PROD);
   console.log("  React  : " + reactOrigine);
   console.log("  écarts : override API + navigator.standalone, service worker retiré");
+  if (nettoyerSource) {
+    nettoyerSource();
+    nettoyerSource = null;
+  }
 }
 
 main().catch((e) => echouer(e.message));
